@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModConfig>
+  <Lua File="%ModDir%/Lua/Shared/util.lua" IsAutorun="true" />
+  <Lua File="%ModDir%/Lua/Server/main.lua" Target="Server" IsAutorun="true" />
+  <Lua File="%ModDir%/Lua/Client/main.lua" Target="Client" IsAutorun="true" />
+</ModConfig>
