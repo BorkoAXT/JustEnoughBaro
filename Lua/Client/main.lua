@@ -12,10 +12,10 @@ local window, listBox, detailList, searchBox, currentCategory, imageOverlay, con
 local tabButtons = {}
 local toggle
 local currentSearch, visible = "", false
-local settings = dofile("LocalMods/Europa Encyclopedia/config.lua") or { openKey = "J", pageSize = 80 }
+local DEFAULT_SETTINGS = { openKey = "J", pageSize = 80 }
+local settings = dofile("LocalMods/Europa Encyclopedia/config.lua") or DEFAULT_SETTINGS
 local GUIStatic = LuaUserData.CreateStatic("Barotrauma.GUI", true)
 local TalentPrefab = LuaUserData.CreateStatic("Barotrauma.TalentPrefab", true)
-local TalentTree = LuaUserData.CreateStatic("Barotrauma.TalentTree", true)
 local AfflictionPrefab = LuaUserData.CreateStatic("Barotrauma.AfflictionPrefab", true)
 local EventPrefab = LuaUserData.CreateStatic("Barotrauma.EventPrefab", true)
 local Sprite = LuaUserData.CreateStatic("Barotrauma.Sprite", true)
@@ -37,6 +37,52 @@ local Keys = LuaUserData.CreateEnumTable("Microsoft.Xna.Framework.Input.Keys")
 local Anchor = LuaUserData.CreateEnumTable("Barotrauma.Anchor")
 local Alignment = LuaUserData.CreateEnumTable("Barotrauma.Alignment")
 local openKey = Keys[settings.openKey] or Keys.J
+local FULL_RELATIVE_SIZE = 1
+local function relativeVector(width, height) return Vector2(width, height) end
+local function fullHeightVector(width) return relativeVector(width, FULL_RELATIVE_SIZE) end
+local UI_VECTOR = {
+    FULL = relativeVector(1, 1), FULL_WIDTH_AUTO_HEIGHT = relativeVector(1, 0),
+    IMAGE_CENTER = relativeVector(0.5, 0.5), OVERLAY_WINDOW = relativeVector(0.82, 0.88),
+    OVERLAY_INNER = relativeVector(0.97, 0.96), OVERLAY_TITLE = relativeVector(0.86, 0.08),
+    OVERLAY_CLOSE = relativeVector(0.09, 0.08), OVERLAY_IMAGE = relativeVector(0.94, 0.84),
+    INFO_ROW = relativeVector(1, 0.052), INFO_KEY = relativeVector(0.27, 1),
+    INFO_VALUE = relativeVector(0.70, 1), ICON_INFO_ROW = relativeVector(1, 0.074),
+    ICON_INFO_ICON = relativeVector(0.075, 0.78), ICON_INFO_TEXT = relativeVector(0.89, 1),
+    REQUIREMENT_ROW = relativeVector(1, 0.09), REQUIREMENT_TEXT = relativeVector(0.82, 1),
+    REQUIREMENT_ICON_FRAME = relativeVector(0.105, 0.86), REQUIREMENT_ICON = relativeVector(0.76, 0.76),
+    LINK_ROW = relativeVector(1, 0.072), LINK_ICON = relativeVector(0.11, 0.82),
+    LINK_TEXT = relativeVector(0.86, 1), ITEM_HERO = relativeVector(1, 0.18),
+    ITEM_HERO_ICON = relativeVector(0.18, 0.82), ITEM_HERO_TITLE = relativeVector(0.76, 0.38),
+    ITEM_HERO_SUMMARY = relativeVector(0.76, 0.58), CREATURE_PREVIEW = relativeVector(1, 0.24),
+    CREATURE_PREVIEW_IMAGE = relativeVector(0.96, 0.90), TALENT_TILE = relativeVector(0.155, 0.90),
+    TALENT_ICON = relativeVector(0.74, 0.72), PROFESSION_HEADER = relativeVector(1, 0.16),
+    PROFESSION_ICON = relativeVector(0.16, 0.80), PROFESSION_TITLE = relativeVector(0.78, 0.46),
+    PROFESSION_SUMMARY = relativeVector(0.78, 0.50), TALENT_ROW = relativeVector(1, 0.105),
+    INDEX_ROW = relativeVector(1, 0.082), INDEX_ICON = relativeVector(0.13, 0.82),
+    WINDOW = relativeVector(0.72, 0.72), WINDOW_PADDING = relativeVector(0.965, 0.95),
+    HEADER = relativeVector(1, 0.09), HEADER_TITLE_AREA = relativeVector(0.58, 1),
+    HEADER_TITLE = relativeVector(0.95, 1), HEADER_CONTROLS = relativeVector(0.40, 1),
+    SEARCH_AREA = relativeVector(0.84, 0.62), SEARCH_BOX = relativeVector(0.98, 1),
+    HEADER_CLOSE = relativeVector(0.14, 0.62), TABS = relativeVector(1, 0.065),
+    TAB_BUTTON = relativeVector(0.247, 0.86), BODY = relativeVector(1, 0.79),
+    INDEX_PANEL = relativeVector(0.315, 1), DETAIL_PANEL = relativeVector(0.67, 1),
+    PANEL_HEADER = relativeVector(0.94, 0.06), PANEL_LIST = relativeVector(0.94, 0.90),
+    CONTEXT_HINT = relativeVector(0.34, 0.05), CONTEXT_HINT_TEXT = relativeVector(0.96, 1),
+    OFFSET_SMALL = relativeVector(0.012, 0), OFFSET_INFO = relativeVector(0.015, 0),
+    OFFSET_STANDARD = relativeVector(0.02, 0), OFFSET_TITLE = relativeVector(0.025, 0),
+    OFFSET_TABS = relativeVector(0, 0.105), OFFSET_CONTEXT_HINT = relativeVector(0, -0.08)
+}
+local ITEM_CATEGORY = {
+    STRUCTURE = 1, DECORATIVE = 2, MACHINE = 4, MEDICAL = 8, WEAPON = 16,
+    DIVING = 32, EQUIPMENT = 64, FUEL = 128, ELECTRICAL = 256, MATERIAL = 1024,
+    ALIEN = 2048, WRECKED = 4096, ITEM_ASSEMBLY = 8192, LEGACY = 16384, MISC = 32768
+}
+local NUMBER_PRECISION = 1000
+local NUMBER_EPSILON = 0.0005
+local PERCENT_SCALE = 100
+local GUI_ORDER = { CONTEXT_HINT = 0, WINDOW = 1000, IMAGE_OVERLAY = 1001 }
+local DELAY_MS = { CORPSE_TEST = 750, DATABASE_BUILD = 1000 }
+local MAX_GUI_PARENT_DEPTH = 12
 
 local function safeField(object, field, fallback)
     if object == nil then return fallback end
@@ -71,10 +117,10 @@ end
 local function numberText(value)
     local numeric = tonumber(value)
     if numeric == nil then return text(value) end
-    if math.abs(numeric) < 0.0005 then numeric = 0 end
+    if math.abs(numeric) < NUMBER_EPSILON then numeric = 0 end
     local rounded
-    if numeric >= 0 then rounded = math.floor(numeric * 1000 + 0.5) / 1000
-    else rounded = math.ceil(numeric * 1000 - 0.5) / 1000 end
+    if numeric >= 0 then rounded = math.floor(numeric * NUMBER_PRECISION + 0.5) / NUMBER_PRECISION
+    else rounded = math.ceil(numeric * NUMBER_PRECISION - 0.5) / NUMBER_PRECISION end
     return string.gsub(string.gsub(string.format("%.3f", rounded), "0+$", ""), "%.$", "")
 end
 local function joined(collection, separator)
@@ -85,10 +131,14 @@ local function joined(collection, separator)
     return table.concat(values, separator or ", ")
 end
 local itemCategoryNames = {
-    {1, "Structure"}, {2, "Decorative"}, {4, "Machine"}, {8, "Medical"},
-    {16, "Weapon"}, {32, "Diving"}, {64, "Equipment"}, {128, "Fuel"},
-    {256, "Electrical"}, {1024, "Material"}, {2048, "Alien"},
-    {4096, "Wrecked"}, {8192, "Item Assembly"}, {16384, "Legacy"}, {32768, "Misc"}
+    {ITEM_CATEGORY.STRUCTURE, "Structure"}, {ITEM_CATEGORY.DECORATIVE, "Decorative"},
+    {ITEM_CATEGORY.MACHINE, "Machine"}, {ITEM_CATEGORY.MEDICAL, "Medical"},
+    {ITEM_CATEGORY.WEAPON, "Weapon"}, {ITEM_CATEGORY.DIVING, "Diving"},
+    {ITEM_CATEGORY.EQUIPMENT, "Equipment"}, {ITEM_CATEGORY.FUEL, "Fuel"},
+    {ITEM_CATEGORY.ELECTRICAL, "Electrical"}, {ITEM_CATEGORY.MATERIAL, "Material"},
+    {ITEM_CATEGORY.ALIEN, "Alien"}, {ITEM_CATEGORY.WRECKED, "Wrecked"},
+    {ITEM_CATEGORY.ITEM_ASSEMBLY, "Item Assembly"}, {ITEM_CATEGORY.LEGACY, "Legacy"},
+    {ITEM_CATEGORY.MISC, "Misc"}
 }
 local function categoryText(value)
     local numeric = tonumber(value) or 0
@@ -201,7 +251,7 @@ local function buildDatabase()
             local entry = { prefab = prefab, identifier = id(prefab.Identifier), name = text(prefab.Name) }
             local hidden = prefab.ConfigElement ~= nil and prefab.ConfigElement.GetAttributeBool("hideinmenus", false)
             local filePath = prefab.ContentFile and text(prefab.ContentFile.Path) or ""
-            local isLegacy = math.floor((tonumber(prefab.Category) or 0) / 16384) % 2 == 1 or E.contains(filePath, "/Legacy/")
+            local isLegacy = math.floor((tonumber(prefab.Category) or 0) / ITEM_CATEGORY.LEGACY) % 2 == 1 or E.contains(filePath, "/Legacy/")
             if entry.name ~= "" and not hidden and not isLegacy and not seenItems[entry.identifier] then
                 seenItems[entry.identifier] = true
                 items[#items + 1] = entry
@@ -312,19 +362,19 @@ end
 local function wikiCreatureSprite(entry)
     local wiki = wikiCreatures[entry.identifier]
     if wiki == nil or wiki.image == nil or wiki.image == "" or not File.Exists(wiki.image) then return nil end
-    return Sprite(wiki.image, Vector2(0.5, 0.5))
+    return Sprite(wiki.image, UI_VECTOR.IMAGE_CENTER)
 end
 
 local function showImageOverlay(sprite, titleText)
     if imageOverlay ~= nil then imageOverlay.Visible = false; imageOverlay = nil end
-    imageOverlay = GUI.Frame(GUI.RectTransform(Vector2(0.82, 0.88), GUIStatic.Canvas, Anchor.Center), "GUIFrameListBox")
-    local inner = GUI.Frame(GUI.RectTransform(Vector2(0.97, 0.96), imageOverlay.RectTransform, Anchor.Center), "InnerFrame")
-    local title = GUI.TextBlock(GUI.RectTransform(Vector2(0.86, 0.08), inner.RectTransform, Anchor.TopLeft),
+    imageOverlay = GUI.Frame(GUI.RectTransform(UI_VECTOR.OVERLAY_WINDOW, GUIStatic.Canvas, Anchor.Center), "GUIFrameListBox")
+    local inner = GUI.Frame(GUI.RectTransform(UI_VECTOR.OVERLAY_INNER, imageOverlay.RectTransform, Anchor.Center), "InnerFrame")
+    local title = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.OVERLAY_TITLE, inner.RectTransform, Anchor.TopLeft),
         string.upper(titleText), Color(101, 203, 218, 255), GUI.Style.SubHeadingFont, Alignment.CenterLeft, false, "")
     title.CanBeFocused = false
-    local close = GUI.Button(GUI.RectTransform(Vector2(0.09, 0.08), inner.RectTransform, Anchor.TopRight), "×", Alignment.Center, "GUICancelButton")
+    local close = GUI.Button(GUI.RectTransform(UI_VECTOR.OVERLAY_CLOSE, inner.RectTransform, Anchor.TopRight), "×", Alignment.Center, "GUICancelButton")
     close.OnClicked = function() imageOverlay.Visible = false; imageOverlay = nil; return true end
-    local image = GUI.Image(GUI.RectTransform(Vector2(0.94, 0.84), inner.RectTransform, Anchor.BottomCenter), sprite, true)
+    local image = GUI.Image(GUI.RectTransform(UI_VECTOR.OVERLAY_IMAGE, inner.RectTransform, Anchor.BottomCenter), sprite, true)
     image.CanBeFocused = false
 end
 
@@ -334,20 +384,20 @@ end
 
 local function line(parent, value, style)
     return GUI.TextBlock(
-        GUI.RectTransform(Vector2(1, 0.0), parent, Anchor.TopCenter),
+        GUI.RectTransform(UI_VECTOR.FULL_WIDTH_AUTO_HEIGHT, parent, Anchor.TopCenter),
         text(value), Color(206, 213, 190, 255), nil, Alignment.TopLeft, true, style or "")
 end
 
 local function label(parent, value, alignment, color)
     return GUI.TextBlock(
-        GUI.RectTransform(Vector2(1, 1), parent, Anchor.Center), text(value),
+        GUI.RectTransform(UI_VECTOR.FULL, parent, Anchor.Center), text(value),
         color or Color(152, 177, 184, 255), GUI.Style.SmallFont,
         alignment or Alignment.CenterLeft, false, "")
 end
 
 local function heading(parent, value)
     return GUI.TextBlock(
-        GUI.RectTransform(Vector2(1, 0.0), parent, Anchor.TopCenter),
+        GUI.RectTransform(UI_VECTOR.FULL_WIDTH_AUTO_HEIGHT, parent, Anchor.TopCenter),
         string.upper(text(value)), Color(92, 185, 201, 255), GUI.Style.SubHeadingFont,
         Alignment.TopLeft, true, "")
 end
@@ -359,23 +409,23 @@ local palette = {
 }
 
 local function infoRow(parent, key, value, color)
-    local row = GUI.Frame(GUI.RectTransform(Vector2(1, 0.052), parent, Anchor.TopCenter), "ListBoxElement")
-    local keyText = GUI.TextBlock(GUI.RectTransform(Vector2(0.27, 1), row.RectTransform, Anchor.CenterLeft),
+    local row = GUI.Frame(GUI.RectTransform(UI_VECTOR.INFO_ROW, parent, Anchor.TopCenter), "ListBoxElement")
+    local keyText = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.INFO_KEY, row.RectTransform, Anchor.CenterLeft),
         string.upper(text(key)), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
-    keyText.RectTransform.RelativeOffset = Vector2(0.015, 0); keyText.CanBeFocused = false
-    local valueText = GUI.TextBlock(GUI.RectTransform(Vector2(0.70, 1), row.RectTransform, Anchor.CenterRight),
+    keyText.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_INFO; keyText.CanBeFocused = false
+    local valueText = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.INFO_VALUE, row.RectTransform, Anchor.CenterRight),
         text(value), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
     valueText.CanBeFocused = false
     return row
 end
 
 local function iconInfoRow(parent, sprite, caption, value, color, tooltip)
-    local row = GUI.Frame(GUI.RectTransform(Vector2(1, 0.074), parent, Anchor.TopCenter), "ListBoxElement")
+    local row = GUI.Frame(GUI.RectTransform(UI_VECTOR.ICON_INFO_ROW, parent, Anchor.TopCenter), "ListBoxElement")
     if sprite ~= nil then
-        local image = GUI.Image(GUI.RectTransform(Vector2(0.075, 0.78), row.RectTransform, Anchor.CenterLeft), sprite, true)
-        image.RectTransform.RelativeOffset = Vector2(0.012, 0); image.CanBeFocused = false
+        local image = GUI.Image(GUI.RectTransform(UI_VECTOR.ICON_INFO_ICON, row.RectTransform, Anchor.CenterLeft), sprite, true)
+        image.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_SMALL; image.CanBeFocused = false
     end
-    local block = GUI.TextBlock(GUI.RectTransform(Vector2(0.89, 1), row.RectTransform, Anchor.CenterRight),
+    local block = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.ICON_INFO_TEXT, row.RectTransform, Anchor.CenterRight),
         string.upper(text(caption)) .. "\n" .. text(value), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
     block.CanBeFocused = false; row.ToolTip = tooltip or text(value)
     return row
@@ -402,15 +452,15 @@ local function fallbackSkillIcon(identifier)
 end
 
 local function requirementRow(parent, captionText, iconSprite, tooltip)
-    local row = GUI.Frame(GUI.RectTransform(Vector2(1, 0.09), parent, Anchor.TopCenter), "ListBoxElement")
+    local row = GUI.Frame(GUI.RectTransform(UI_VECTOR.REQUIREMENT_ROW, parent, Anchor.TopCenter), "ListBoxElement")
     local caption = GUI.TextBlock(
-        GUI.RectTransform(Vector2(0.82, 1), row.RectTransform, Anchor.CenterLeft),
+        GUI.RectTransform(UI_VECTOR.REQUIREMENT_TEXT, row.RectTransform, Anchor.CenterLeft),
         captionText, nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
-    caption.RectTransform.RelativeOffset = Vector2(0.02, 0)
+    caption.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_STANDARD
     caption.CanBeFocused = false
-    local square = GUI.Frame(GUI.RectTransform(Vector2(0.105, 0.86), row.RectTransform, Anchor.CenterRight), "TalentBackground")
+    local square = GUI.Frame(GUI.RectTransform(UI_VECTOR.REQUIREMENT_ICON_FRAME, row.RectTransform, Anchor.CenterRight), "TalentBackground")
     if iconSprite ~= nil then
-        local image = GUI.Image(GUI.RectTransform(Vector2(0.76, 0.76), square.RectTransform, Anchor.Center), iconSprite, true)
+        local image = GUI.Image(GUI.RectTransform(UI_VECTOR.REQUIREMENT_ICON, square.RectTransform, Anchor.Center), iconSprite, true)
         image.CanBeFocused = false
     else
         label(square.RectTransform, "?", Alignment.Center, Color(101, 203, 218, 255))
@@ -442,15 +492,15 @@ local function recipeUnlockRequirements(parent, prefab)
 end
 
 local function itemButton(parent, entry, suffix)
-    local button = GUI.Button(GUI.RectTransform(Vector2(1, 0.072), parent, Anchor.TopCenter), "", Alignment.CenterLeft, "ListBoxElement")
+    local button = GUI.Button(GUI.RectTransform(UI_VECTOR.LINK_ROW, parent, Anchor.TopCenter), "", Alignment.CenterLeft, "ListBoxElement")
     local sprite = entry.prefab.InventoryIcon or entry.prefab.Sprite
     if sprite ~= nil then
-        local icon = GUI.Image(GUI.RectTransform(Vector2(0.11, 0.82), button.RectTransform, Anchor.CenterLeft), sprite, true)
+        local icon = GUI.Image(GUI.RectTransform(UI_VECTOR.LINK_ICON, button.RectTransform, Anchor.CenterLeft), sprite, true)
         icon.Color = entry.prefab.InventoryIcon and entry.prefab.InventoryIconColor or entry.prefab.SpriteColor
         icon.CanBeFocused = false
     end
     local caption = GUI.TextBlock(
-        GUI.RectTransform(Vector2(0.86, 1), button.RectTransform, Anchor.CenterRight),
+        GUI.RectTransform(UI_VECTOR.LINK_TEXT, button.RectTransform, Anchor.CenterRight),
         entry.name .. (suffix or ""), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
     caption.CanBeFocused = false
     button.OnClicked = function() currentCategory = "Items"; populateList(entry.identifier); showItem(entry); return true end
@@ -541,9 +591,9 @@ local function showItemCapabilities(prefab, parent)
             local affected = element.GetAttributeString("afflictionidentifiers", element.GetAttributeString("afflictiontypes", "damage"))
             local probabilityMultiplier = element.GetAttributeFloat("probabilitymultiplier", 1)
             if multiplier < 1 then
-                addAffectedEffects(protection, affected, "  " .. text(math.floor((1 - multiplier) * 100 + 0.5)) .. "% resistance")
+                addAffectedEffects(protection, affected, "  " .. text(math.floor((1 - multiplier) * PERCENT_SCALE + 0.5)) .. "% resistance")
             elseif probabilityMultiplier < 1 then
-                addAffectedEffects(protection, affected, "  " .. text(math.floor((1 - probabilityMultiplier) * 100 + 0.5)) .. "% affliction resistance")
+                addAffectedEffects(protection, affected, "  " .. text(math.floor((1 - probabilityMultiplier) * PERCENT_SCALE + 0.5)) .. "% affliction resistance")
             end
         elseif name == "skillmodifier" and context == "wearable" then
             local skillName = prettyIdentifier(element.GetAttributeString("skillidentifier", ""))
@@ -552,11 +602,11 @@ local function showItemCapabilities(prefab, parent)
         elseif name == "statvalue" and context == "wearable" then
             local stat = prettyIdentifier(element.GetAttributeString("stattype", ""))
             local value = element.GetAttributeFloat("value", 0)
-            stats[#stats + 1] = stat .. "  " .. (value >= 0 and "+" or "") .. text(math.floor(value * 100 + 0.5)) .. "%"
+            stats[#stats + 1] = stat .. "  " .. (value >= 0 and "+" or "") .. text(math.floor(value * PERCENT_SCALE + 0.5)) .. "%"
         elseif name == "statuseffect" and id(element.GetAttributeString("type", "")) == "onwearing" then
             local speed = element.GetAttributeFloat("speedmultiplier", 1)
             local pressure = element.GetAttributeFloat("pressureprotection", 0)
-            if speed ~= 1 then stats[#stats + 1] = "Speed multiplier  " .. text(math.floor(speed * 100 + 0.5)) .. "%" end
+            if speed ~= 1 then stats[#stats + 1] = "Speed multiplier  " .. text(math.floor(speed * PERCENT_SCALE + 0.5)) .. "%" end
             if pressure > 0 then stats[#stats + 1] = "Pressure protection  " .. text(pressure) end
         elseif name == "attack" or name == "explosion" then
             nextContext = "attack"
@@ -565,7 +615,7 @@ local function showItemCapabilities(prefab, parent)
             local penetration = element.GetAttributeFloat("penetration", 0)
             if structureDamage > 0 then attacks[#attacks + 1] = "Structure damage  " .. text(structureDamage) end
             if itemDamage > 0 then attacks[#attacks + 1] = "Item damage  " .. text(itemDamage) end
-            if penetration > 0 then attacks[#attacks + 1] = "Penetration  " .. text(math.floor(penetration * 100 + 0.5)) .. "%" end
+            if penetration > 0 then attacks[#attacks + 1] = "Penetration  " .. text(math.floor(penetration * PERCENT_SCALE + 0.5)) .. "%" end
         elseif name == "affliction" and context == "attack" then
             local strength = element.GetAttributeFloat("strength", element.GetAttributeFloat("amount", 0))
             local probability = element.GetAttributeFloat("probability", 1)
@@ -641,18 +691,18 @@ end
 function showItem(entry)
     clear(detailList)
     local p = entry.prefab
-    local hero = GUI.Frame(GUI.RectTransform(Vector2(1, 0.18), detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
+    local hero = GUI.Frame(GUI.RectTransform(UI_VECTOR.ITEM_HERO, detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
     local sprite = p.InventoryIcon or p.Sprite
     if sprite ~= nil then
-        local image = GUI.Image(GUI.RectTransform(Vector2(0.18, 0.82), hero.RectTransform, Anchor.CenterLeft), sprite, true)
-        image.RectTransform.RelativeOffset = Vector2(0.02, 0); image.Color = p.InventoryIcon and p.InventoryIconColor or p.SpriteColor
+        local image = GUI.Image(GUI.RectTransform(UI_VECTOR.ITEM_HERO_ICON, hero.RectTransform, Anchor.CenterLeft), sprite, true)
+        image.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_STANDARD; image.Color = p.InventoryIcon and p.InventoryIconColor or p.SpriteColor
         image.CanBeFocused = false
     end
-    local title = GUI.TextBlock(GUI.RectTransform(Vector2(0.76, 0.38), hero.RectTransform, Anchor.TopRight),
+    local title = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.ITEM_HERO_TITLE, hero.RectTransform, Anchor.TopRight),
         string.upper(entry.name), palette.cyan, GUI.Style.SubHeadingFont, Alignment.CenterLeft, false, "")
     title.CanBeFocused = false
     local description = text(p.Description)
-    local summary = GUI.TextBlock(GUI.RectTransform(Vector2(0.76, 0.58), hero.RectTransform, Anchor.BottomRight),
+    local summary = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.ITEM_HERO_SUMMARY, hero.RectTransform, Anchor.BottomRight),
         description ~= "" and description or "No description supplied by the loaded content package.",
         Color(206, 213, 190, 255), GUI.Style.SmallFont, Alignment.TopLeft, true, "")
     summary.CanBeFocused = false
@@ -725,8 +775,6 @@ function showItem(entry)
     table.sort(sortedSources, function(a, b) return a.source.name < b.source.name end)
     for _, source in ipairs(sortedSources) do itemButton(detailList.Content.RectTransform, source.source, "  → x" .. text(source.amount)) end
 
-    -- Optional enriched information is deliberately rendered last. If a modded
-    -- prefab exposes an unusual component, the core recipes and yields remain visible.
     showItemCapabilities(p, detailList.Content.RectTransform)
     showMerchantInfo(p, detailList.Content.RectTransform)
 end
@@ -784,9 +832,9 @@ local function showCreature(entry)
     local wiki = wikiCreatures[entry.identifier]
     local preview = wikiCreatureSprite(entry) or creaturePreviewSprite(p)
     if preview ~= nil then
-        local previewFrame = GUI.Frame(GUI.RectTransform(Vector2(1, 0.24), detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
-        local previewButton = GUI.Button(GUI.RectTransform(Vector2(1, 1), previewFrame.RectTransform, Anchor.Center), "", Alignment.Center, "ListBoxElement")
-        local image = GUI.Image(GUI.RectTransform(Vector2(0.96, 0.90), previewButton.RectTransform, Anchor.Center), preview, true)
+        local previewFrame = GUI.Frame(GUI.RectTransform(UI_VECTOR.CREATURE_PREVIEW, detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
+        local previewButton = GUI.Button(GUI.RectTransform(UI_VECTOR.FULL, previewFrame.RectTransform, Anchor.Center), "", Alignment.Center, "ListBoxElement")
+        local image = GUI.Image(GUI.RectTransform(UI_VECTOR.CREATURE_PREVIEW_IMAGE, previewButton.RectTransform, Anchor.Center), preview, true)
         image.CanBeFocused = false
         previewButton.ToolTip = "Click to enlarge"
         previewButton.OnClicked = function() showImageOverlay(preview, entry.name); return true end
@@ -833,9 +881,9 @@ end
 
 local function talentTile(parent, identifier)
     local talent = findTalent(identifier)
-    local tile = GUI.Frame(GUI.RectTransform(Vector2(0.155, 0.90), parent, Anchor.CenterLeft), "TalentBackground")
+    local tile = GUI.Frame(GUI.RectTransform(UI_VECTOR.TALENT_TILE, parent, Anchor.CenterLeft), "TalentBackground")
     if talent ~= nil and talent.Icon ~= nil then
-        local image = GUI.Image(GUI.RectTransform(Vector2(0.74, 0.72), tile.RectTransform, Anchor.Center), talent.Icon, true)
+        local image = GUI.Image(GUI.RectTransform(UI_VECTOR.TALENT_ICON, tile.RectTransform, Anchor.Center), talent.Icon, true)
         image.CanBeFocused = false
     else label(tile.RectTransform, "?", Alignment.Center, palette.cyan) end
     local name = talent and text(talent.DisplayName) or prettyIdentifier(identifier)
@@ -847,17 +895,17 @@ end
 local function showProfession(entry)
     clear(detailList)
     local p = entry.prefab
-    local header = GUI.Frame(GUI.RectTransform(Vector2(1, 0.16), detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
+    local header = GUI.Frame(GUI.RectTransform(UI_VECTOR.PROFESSION_HEADER, detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
     local jobIcon = safeField(p, "Icon", safeField(p, "IconSmall", nil))
     if jobIcon ~= nil then
-        local image = GUI.Image(GUI.RectTransform(Vector2(0.16, 0.80), header.RectTransform, Anchor.CenterLeft), jobIcon, true)
-        image.RectTransform.RelativeOffset = Vector2(0.02, 0); image.CanBeFocused = false
+        local image = GUI.Image(GUI.RectTransform(UI_VECTOR.PROFESSION_ICON, header.RectTransform, Anchor.CenterLeft), jobIcon, true)
+        image.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_STANDARD; image.CanBeFocused = false
     end
-    local title = GUI.TextBlock(GUI.RectTransform(Vector2(0.78, 0.46), header.RectTransform, Anchor.TopRight),
+    local title = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.PROFESSION_TITLE, header.RectTransform, Anchor.TopRight),
         string.upper(entry.name), palette.cyan, GUI.Style.SubHeadingFont, Alignment.CenterLeft, false, "")
     title.CanBeFocused = false
     local description = text(safeField(p, "Description", ""))
-    local summary = GUI.TextBlock(GUI.RectTransform(Vector2(0.78, 0.50), header.RectTransform, Anchor.BottomRight),
+    local summary = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.PROFESSION_SUMMARY, header.RectTransform, Anchor.BottomRight),
         description ~= "" and description or "Read-only profession reference and talent tree.",
         Color(206, 213, 190, 255), GUI.Style.SmallFont, Alignment.TopLeft, true, "")
     summary.CanBeFocused = false
@@ -884,7 +932,7 @@ local function showProfession(entry)
     for subtreeTag, subtreeBody in string.gmatch(treeXml, "<[Ss]ub[Tt]ree([^>]*)>(.-)</[Ss]ub[Tt]ree>") do
         heading(detailList.Content.RectTransform, prettyIdentifier(xmlAttribute(subtreeTag, "identifier", "Talent path")))
         for stageBody in string.gmatch(subtreeBody, "<[Tt]alent[Oo]ptions[^>]*>(.-)</[Tt]alent[Oo]ptions>") do
-            local row = GUI.LayoutGroup(GUI.RectTransform(Vector2(1, 0.105), detailList.Content.RectTransform, Anchor.TopCenter), true, Anchor.CenterLeft)
+            local row = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.TALENT_ROW, detailList.Content.RectTransform, Anchor.TopCenter), true, Anchor.CenterLeft)
             for optionTag in string.gmatch(stageBody, "<[Tt]alent[Oo]ption%s+([^>/]-)/?>") do
                 local identifier = xmlAttribute(optionTag, "identifier", "")
                 if identifier ~= "" then talentTile(row.RectTransform, identifier) end
@@ -899,7 +947,7 @@ local function itemAfflictionLinks(targetIdentifier, targetType)
     local function scanItem(entry)
         local treatmentStrength, suitability, causeStrength = 0, 0, 0
         local numericCategory = tonumber(entry.prefab.Category) or 0
-        local isMedical = math.floor(numericCategory / 8) % 2 == 1
+        local isMedical = math.floor(numericCategory / ITEM_CATEGORY.MEDICAL) % 2 == 1
         local function walk(element)
             local name = id(element.NameAsIdentifier())
             if name == "suitabletreatment" and isMedical then
@@ -943,13 +991,13 @@ end
 
 local showAffliction
 local function afflictionButton(parent, entry, suffix)
-    local button = GUI.Button(GUI.RectTransform(Vector2(1, 0.072), parent, Anchor.TopCenter), "", Alignment.CenterLeft, "ListBoxElement")
+    local button = GUI.Button(GUI.RectTransform(UI_VECTOR.LINK_ROW, parent, Anchor.TopCenter), "", Alignment.CenterLeft, "ListBoxElement")
     local sprite = safeField(entry.prefab, "Icon", nil)
     if sprite ~= nil then
-        local icon = GUI.Image(GUI.RectTransform(Vector2(0.11, 0.82), button.RectTransform, Anchor.CenterLeft), sprite, true)
+        local icon = GUI.Image(GUI.RectTransform(UI_VECTOR.LINK_ICON, button.RectTransform, Anchor.CenterLeft), sprite, true)
         icon.CanBeFocused = false
     end
-    local caption = GUI.TextBlock(GUI.RectTransform(Vector2(0.86, 1), button.RectTransform, Anchor.CenterRight),
+    local caption = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.LINK_TEXT, button.RectTransform, Anchor.CenterRight),
         entry.name .. (suffix or ""), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
     caption.CanBeFocused = false
     button.OnClicked = function()
@@ -1017,7 +1065,7 @@ function populateList(forceSearch)
     if currentCategory == "Bestiary" then source = creatures
     elseif currentCategory == "Professions" then source = professions
     elseif currentCategory == "Afflictions" then source = afflictions end
-    local shown, limit = 0, tonumber(settings.pageSize) or 80
+    local shown, limit = 0, tonumber(settings.pageSize) or DEFAULT_SETTINGS.pageSize
     for _, entry in ipairs(source) do
         local tags, category = "", ""
         if currentCategory == "Items" then
@@ -1031,14 +1079,14 @@ function populateList(forceSearch)
             if shown <= limit then
                 local label = entry.name
                 if currentCategory == "Bestiary" and not unlocked[entry.identifier] then label = "?????????\nUnknown Creature" end
-                local button = GUI.Button(GUI.RectTransform(Vector2(1, 0.082), listBox.Content.RectTransform), "", Alignment.CenterLeft, "ListBoxElement")
+                local button = GUI.Button(GUI.RectTransform(UI_VECTOR.INDEX_ROW, listBox.Content.RectTransform), "", Alignment.CenterLeft, "ListBoxElement")
                 if currentCategory ~= "Bestiary" then
                     local sprite = nil
                     if currentCategory == "Items" then sprite = entry.prefab.InventoryIcon or entry.prefab.Sprite
                     elseif currentCategory == "Professions" then sprite = safeField(entry.prefab, "IconSmall", safeField(entry.prefab, "Icon", nil))
                     elseif currentCategory == "Afflictions" then sprite = safeField(entry.prefab, "Icon", nil) end
                     if sprite ~= nil then
-                        local icon = GUI.Image(GUI.RectTransform(Vector2(0.13, 0.82), button.RectTransform, Anchor.CenterLeft), sprite, true)
+                        local icon = GUI.Image(GUI.RectTransform(UI_VECTOR.INDEX_ICON, button.RectTransform, Anchor.CenterLeft), sprite, true)
                         if currentCategory == "Items" then
                             icon.Color = entry.prefab.InventoryIcon and entry.prefab.InventoryIconColor or entry.prefab.SpriteColor
                         end
@@ -1047,7 +1095,7 @@ function populateList(forceSearch)
                 end
                 local captionWidth = currentCategory == "Bestiary" and 0.96 or 0.83
                 local caption = GUI.TextBlock(
-                    GUI.RectTransform(Vector2(captionWidth, 1), button.RectTransform, Anchor.CenterRight),
+                    GUI.RectTransform(fullHeightVector(captionWidth), button.RectTransform, Anchor.CenterRight),
                     label, nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
                 caption.CanBeFocused = false
                 button.OnClicked = function()
@@ -1082,48 +1130,48 @@ end
 
 local function createWindow()
     local canvas = GUIStatic.Canvas
-    local windowSize = Vector2(0.72, 0.72)
+    local windowSize = UI_VECTOR.WINDOW
     local windowRect = GUI.RectTransform(windowSize, canvas, Anchor.Center)
     window = GUI.Frame(windowRect, "GUIFrameListBox")
-    local padded = GUI.Frame(GUI.RectTransform(Vector2(0.965, 0.95), window.RectTransform, Anchor.Center), nil)
+    local padded = GUI.Frame(GUI.RectTransform(UI_VECTOR.WINDOW_PADDING, window.RectTransform, Anchor.Center), nil)
 
-    local header = GUI.Frame(GUI.RectTransform(Vector2(1, 0.09), padded.RectTransform, Anchor.TopCenter), "InnerFrame")
-    local titleArea = GUI.Frame(GUI.RectTransform(Vector2(0.58, 1), header.RectTransform, Anchor.TopLeft), nil)
+    local header = GUI.Frame(GUI.RectTransform(UI_VECTOR.HEADER, padded.RectTransform, Anchor.TopCenter), "InnerFrame")
+    local titleArea = GUI.Frame(GUI.RectTransform(UI_VECTOR.HEADER_TITLE_AREA, header.RectTransform, Anchor.TopLeft), nil)
     local title = GUI.TextBlock(
-        GUI.RectTransform(Vector2(0.95, 1), titleArea.RectTransform, Anchor.CenterLeft),
+        GUI.RectTransform(UI_VECTOR.HEADER_TITLE, titleArea.RectTransform, Anchor.CenterLeft),
         "EUROPA ENCYCLOPEDIA", Color(101, 203, 218, 255), GUI.Style.SubHeadingFont,
         Alignment.CenterLeft, false, "")
-    title.RectTransform.RelativeOffset = Vector2(0.025, 0)
+    title.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_TITLE
 
-    local headerControls = GUI.LayoutGroup(GUI.RectTransform(Vector2(0.40, 1), header.RectTransform, Anchor.TopRight), true, Anchor.CenterRight)
-    local searchArea = GUI.Frame(GUI.RectTransform(Vector2(0.84, 0.62), headerControls.RectTransform), nil)
-    searchBox = GUI.TextBox(GUI.RectTransform(Vector2(0.98, 1), searchArea.RectTransform, Anchor.Center), "")
+    local headerControls = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.HEADER_CONTROLS, header.RectTransform, Anchor.TopRight), true, Anchor.CenterRight)
+    local searchArea = GUI.Frame(GUI.RectTransform(UI_VECTOR.SEARCH_AREA, headerControls.RectTransform), nil)
+    searchBox = GUI.TextBox(GUI.RectTransform(UI_VECTOR.SEARCH_BOX, searchArea.RectTransform, Anchor.Center), "")
     searchBox.OnTextChangedDelegate = function(_, newText)
         currentSearch = text(newText)
         populateList()
         return true
     end
-    local close = GUI.Button(GUI.RectTransform(Vector2(0.14, 0.62), headerControls.RectTransform), "×", Alignment.Center, "GUICancelButton")
+    local close = GUI.Button(GUI.RectTransform(UI_VECTOR.HEADER_CLOSE, headerControls.RectTransform), "×", Alignment.Center, "GUICancelButton")
     close.OnClicked = function() toggle(); return true end
 
-    local tabs = GUI.LayoutGroup(GUI.RectTransform(Vector2(1, 0.065), padded.RectTransform, Anchor.TopCenter), true, Anchor.CenterLeft)
-    tabs.RectTransform.RelativeOffset = Vector2(0, 0.105)
+    local tabs = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.TABS, padded.RectTransform, Anchor.TopCenter), true, Anchor.CenterLeft)
+    tabs.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_TABS
     tabButtons = {}
     for _, category in ipairs({"Bestiary", "Items", "Professions", "Afflictions"}) do
-        local b = GUI.Button(GUI.RectTransform(Vector2(0.247, 0.86), tabs.RectTransform), string.upper(category), Alignment.Center, "GUIButtonSmall")
+        local b = GUI.Button(GUI.RectTransform(UI_VECTOR.TAB_BUTTON, tabs.RectTransform), string.upper(category), Alignment.Center, "GUIButtonSmall")
         b.OnClicked = function() selectCategory(category); return true end
         tabButtons[category] = b
     end
 
-    local body = GUI.Frame(GUI.RectTransform(Vector2(1, 0.79), padded.RectTransform, Anchor.BottomCenter), nil)
-    local left = GUI.Frame(GUI.RectTransform(Vector2(0.315, 1), body.RectTransform, Anchor.BottomLeft), "InnerFrame")
-    local right = GUI.Frame(GUI.RectTransform(Vector2(0.67, 1), body.RectTransform, Anchor.BottomRight), "InnerFrame")
-    local listHeader = GUI.Frame(GUI.RectTransform(Vector2(0.94, 0.06), left.RectTransform, Anchor.TopCenter), nil)
+    local body = GUI.Frame(GUI.RectTransform(UI_VECTOR.BODY, padded.RectTransform, Anchor.BottomCenter), nil)
+    local left = GUI.Frame(GUI.RectTransform(UI_VECTOR.INDEX_PANEL, body.RectTransform, Anchor.BottomLeft), "InnerFrame")
+    local right = GUI.Frame(GUI.RectTransform(UI_VECTOR.DETAIL_PANEL, body.RectTransform, Anchor.BottomRight), "InnerFrame")
+    local listHeader = GUI.Frame(GUI.RectTransform(UI_VECTOR.PANEL_HEADER, left.RectTransform, Anchor.TopCenter), nil)
     label(listHeader.RectTransform, "INDEX", Alignment.CenterLeft, Color(101, 203, 218, 255))
-    local detailHeader = GUI.Frame(GUI.RectTransform(Vector2(0.94, 0.06), right.RectTransform, Anchor.TopCenter), nil)
+    local detailHeader = GUI.Frame(GUI.RectTransform(UI_VECTOR.PANEL_HEADER, right.RectTransform, Anchor.TopCenter), nil)
     label(detailHeader.RectTransform, "ARCHIVE RECORD", Alignment.CenterLeft, Color(101, 203, 218, 255))
-    listBox = GUI.ListBox(GUI.RectTransform(Vector2(0.94, 0.90), left.RectTransform, Anchor.BottomCenter))
-    detailList = GUI.ListBox(GUI.RectTransform(Vector2(0.94, 0.90), right.RectTransform, Anchor.BottomCenter))
+    listBox = GUI.ListBox(GUI.RectTransform(UI_VECTOR.PANEL_LIST, left.RectTransform, Anchor.BottomCenter))
+    detailList = GUI.ListBox(GUI.RectTransform(UI_VECTOR.PANEL_LIST, right.RectTransform, Anchor.BottomCenter))
     selectCategory("Bestiary")
 end
 
@@ -1149,19 +1197,15 @@ local function getFocusedEntry()
         return nil
     end
 
-    -- Inventory slots are drawn directly rather than as GUI components. This
-    -- covers player inventories, chests/cabinets and machine input/output slots.
     local selectedSlot = InventoryStatic.SelectedSlot
     if selectedSlot ~= nil and selectedSlot.Item ~= nil then
         local entry = entryFromPrefab(selectedSlot.Item.Prefab)
         if entry ~= nil then return "Items", entry end
     end
 
-    -- Fabricator recipes, stores and some machine panels attach the represented
-    -- item/prefab to a parent GUI component. Walk upward from the hovered child.
     local hovered = GUIStatic.MouseOn
     local depth = 0
-    while hovered ~= nil and depth < 12 do
+    while hovered ~= nil and depth < MAX_GUI_PARENT_DEPTH do
         local entry = entryFromPrefab(prefabFromUserData(hovered.UserData))
         if entry ~= nil then return "Items", entry end
         hovered = hovered.Parent
@@ -1206,15 +1250,15 @@ local function updateContextHint()
         return
     end
     if contextHint == nil then
-        contextHint = GUI.Frame(GUI.RectTransform(Vector2(0.34, 0.05), GUIStatic.Canvas, Anchor.BottomCenter), "InnerFrame")
-        contextHint.RectTransform.RelativeOffset = Vector2(0, -0.08)
-        contextHintText = GUI.TextBlock(GUI.RectTransform(Vector2(0.96, 1), contextHint.RectTransform, Anchor.Center),
+        contextHint = GUI.Frame(GUI.RectTransform(UI_VECTOR.CONTEXT_HINT, GUIStatic.Canvas, Anchor.BottomCenter), "InnerFrame")
+        contextHint.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_CONTEXT_HINT
+        contextHintText = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.CONTEXT_HINT_TEXT, contextHint.RectTransform, Anchor.Center),
             "", Color(206, 213, 190, 255), GUI.Style.SmallFont, Alignment.Center, false, "")
         contextHintText.CanBeFocused = false
     end
     contextHintText.Text = "[" .. text(settings.openKey) .. "]  OPEN " .. string.upper(category) .. ":  " .. entry.name
     contextHint.Visible = true
-    contextHint.AddToGUIUpdateList(false, 0)
+    contextHint.AddToGUIUpdateList(false, GUI_ORDER.CONTEXT_HINT)
 end
 
 Networking.Receive(NET_SYNC, function(msg)
@@ -1246,10 +1290,8 @@ Hook.Add("think", "EuropaEncyclopedia.Input", function()
         elseif not openFocusedEntry() then toggle() end
     end
     if visible and PlayerInput.KeyHit(Keys.Escape) then toggle() end
-    -- Container, fabricator and inventory interfaces enqueue themselves late in the
-    -- frame. A high explicit order keeps the journal both visible and interactive.
-    if visible and window ~= nil then window.AddToGUIUpdateList(false, 1000) end
-    if imageOverlay ~= nil then imageOverlay.AddToGUIUpdateList(false, 1001) end
+    if visible and window ~= nil then window.AddToGUIUpdateList(false, GUI_ORDER.WINDOW) end
+    if imageOverlay ~= nil then imageOverlay.AddToGUIUpdateList(false, GUI_ORDER.IMAGE_OVERLAY) end
 end)
 
 Game.AddCommand("encyclopedia", "Toggle the Europa Encyclopedia", function() toggle() end)
@@ -1266,7 +1308,7 @@ Game.AddCommand("encyclopedia_corpse", "Single player: spawn a creature at the c
     end
     print("[Europa Encyclopedia] Spawning " .. target .. "; all living monsters will be killed after spawning.")
     Game.ExecuteCommand("spawn " .. target .. " cursor")
-    Timer.Wait(function() Game.ExecuteCommand("killmonsters") end, 750)
+    Timer.Wait(function() Game.ExecuteCommand("killmonsters") end, DELAY_MS.CORPSE_TEST)
 end)
 
 Game.AddCommand("encyclopedia_test", "Single player: unlock a bestiary species, all species, or reset", function(args)
@@ -1318,4 +1360,4 @@ Timer.Wait(function()
         local msg = Networking.Start(NET_REQUEST)
         Networking.Send(msg)
     end
-end, 1000)
+end, DELAY_MS.DATABASE_BUILD)
