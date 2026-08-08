@@ -1,17 +1,19 @@
 local E = EuropaEncyclopedia
 local wikiCreatures = dofile(E.path("Lua/Client/wiki_data.lua")) or {}
-local NET_SYNC = "europaencyclopedia.sync"
-local NET_REQUEST = "europaencyclopedia.request"
-local unlocked, items, creatures, professions, afflictions = {}, {}, {}, {}, {}
+local items, creatures, professions, afflictions = {}, {}, {}, {}
 local itemByIdentifier, creatureByIdentifier = {}, {}
 local afflictionByIdentifier = {}
+local professionByIdentifier = {}
 local reverseCraft, reverseDeconstruct = {}, {}
 local recipeTalents, recipeBlueprints = {}, {}
 local creatureHabitats = {}
 local window, listBox, detailList, searchBox, currentCategory, imageOverlay, contextHint, contextHintText
+local itemFilterControls, itemFilterLabel
 local tabButtons = {}
 local toggle
+local navigateTo
 local currentSearch, visible = "", false
+local itemCategoryFilter = "All"
 local DEFAULT_SETTINGS = { openKey = "J", pageSize = 80 }
 local settings = dofile(E.path("config.lua")) or DEFAULT_SETTINGS
 local GUIStatic = LuaUserData.CreateStatic("Barotrauma.GUI", true)
@@ -54,10 +56,12 @@ local UI_VECTOR = {
     LINK_TEXT = relativeVector(0.86, 1), ITEM_HERO = relativeVector(1, 0.18),
     ITEM_HERO_ICON = relativeVector(0.18, 0.82), ITEM_HERO_TITLE = relativeVector(0.76, 0.38),
     ITEM_HERO_SUMMARY = relativeVector(0.76, 0.58), CREATURE_PREVIEW = relativeVector(1, 0.24),
-    CREATURE_PREVIEW_IMAGE = relativeVector(0.96, 0.90), TALENT_TILE = relativeVector(0.155, 0.90),
+    CREATURE_PREVIEW_IMAGE = relativeVector(0.96, 0.90), TALENT_TILE = relativeVector(0.30, 0.82),
+    TALENT_PRIMARY_TILE = relativeVector(0.145, 0.82), TALENT_PRIMARY_ROW = relativeVector(1, 0.115),
+    TALENT_COLUMN = relativeVector(0.32, 1), TALENT_PATH_OPTIONS = relativeVector(0.94, 0.90),
     TALENT_ICON = relativeVector(0.74, 0.72), PROFESSION_HEADER = relativeVector(1, 0.16),
     PROFESSION_ICON = relativeVector(0.16, 0.80), PROFESSION_TITLE = relativeVector(0.78, 0.46),
-    PROFESSION_SUMMARY = relativeVector(0.78, 0.50), TALENT_ROW = relativeVector(1, 0.105),
+    PROFESSION_SUMMARY = relativeVector(0.78, 0.50),
     INDEX_ROW = relativeVector(1, 0.082), INDEX_ICON = relativeVector(0.13, 0.82),
     WINDOW = relativeVector(0.72, 0.72), WINDOW_PADDING = relativeVector(0.965, 0.95),
     HEADER = relativeVector(1, 0.09), HEADER_TITLE_AREA = relativeVector(0.58, 1),
@@ -67,6 +71,10 @@ local UI_VECTOR = {
     TAB_BUTTON = relativeVector(0.247, 0.86), BODY = relativeVector(1, 0.79),
     INDEX_PANEL = relativeVector(0.315, 1), DETAIL_PANEL = relativeVector(0.67, 1),
     PANEL_HEADER = relativeVector(0.94, 0.06), PANEL_LIST = relativeVector(0.94, 0.90),
+    FILTER_PREVIOUS = relativeVector(0.14, 0.82), FILTER_LABEL = relativeVector(0.68, 0.82),
+    FILTER_NEXT = relativeVector(0.14, 0.82),
+    FILTER_CONTROLS = relativeVector(0.76, 1), LIST_HEADER_TITLE = relativeVector(0.22, 1),
+    DETAIL_HEADER_TITLE = relativeVector(0.78, 1),
     CONTEXT_HINT = relativeVector(0.34, 0.05), CONTEXT_HINT_TEXT = relativeVector(0.96, 1),
     OFFSET_SMALL = relativeVector(0.012, 0), OFFSET_INFO = relativeVector(0.015, 0),
     OFFSET_STANDARD = relativeVector(0.02, 0), OFFSET_TITLE = relativeVector(0.025, 0),
@@ -83,6 +91,11 @@ local PERCENT_SCALE = 100
 local GUI_ORDER = { CONTEXT_HINT = 0, WINDOW = 1000, IMAGE_OVERLAY = 1001 }
 local DELAY_MS = { CORPSE_TEST = 750, DATABASE_BUILD = 1000 }
 local MAX_GUI_PARENT_DEPTH = 12
+local TALENT_TREE_BASE_HEIGHT = 0.10
+local TALENT_TREE_STAGE_HEIGHT = 0.115
+local TALENT_TILE_WIDTH = 0.30
+local TALENT_PRIMARY_TILE_WIDTH = 0.145
+local TALENT_ROW_COLOR = Color(46, 46, 46, 255)
 
 local function safeField(object, field, fallback)
     if object == nil then return fallback end
@@ -149,8 +162,43 @@ local function categoryText(value)
     end
     return table.concat(names, ", ")
 end
+local itemFilterNames = {
+    "All", "Weapons", "Ammunition", "Gear", "Diving", "Medical", "Tools",
+    "Electrical", "Materials", "Ores", "Ruins & Alien", "Miscellaneous"
+}
+local function hasCategory(value, flag)
+    return math.floor((tonumber(value) or 0) / flag) % 2 == 1
+end
+local function itemFilterCategory(entry)
+    local prefab = entry.prefab
+    local identifier = entry.identifier
+    local tags = string.lower(joined(prefab.Tags, " "))
+    local sourcePath = string.lower(prefab.ContentFile and text(prefab.ContentFile.Path) or "")
+    local searchable = identifier .. " " .. string.lower(entry.name) .. " " .. tags .. " " .. sourcePath
+    if E.contains(searchable, "ore") or E.contains(tags, "mineral") then return "Ores" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.ALIEN) or E.contains(sourcePath, "ruin") or E.contains(tags, "alien") then return "Ruins & Alien" end
+    if E.contains(tags, "ammo") or E.contains(tags, "ammunition") or E.contains(identifier, "round") or
+        E.contains(identifier, "magazine") or E.contains(identifier, "shell") then return "Ammunition" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.MEDICAL) then return "Medical" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.DIVING) then return "Diving" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.WEAPON) then return "Weapons" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.ELECTRICAL) then return "Electrical" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.MATERIAL) then return "Materials" end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.EQUIPMENT) then return "Gear" end
+    if E.contains(tags, "tool") or E.contains(sourcePath, "/tools") then return "Tools" end
+    return "Miscellaneous"
+end
 local function addIndex(index, key, value)
     key = id(key); index[key] = index[key] or {}; index[key][#index[key] + 1] = value
+end
+local function addUniqueEntry(index, key, value, identity)
+    key = id(key)
+    index[key] = index[key] or {}
+    local valueIdentity = identity(value)
+    for _, existing in ipairs(index[key]) do
+        if identity(existing) == valueIdentity then return end
+    end
+    index[key][#index[key] + 1] = value
 end
 
 local function xmlAttribute(tag, name, fallback)
@@ -220,30 +268,9 @@ local function indexMonsterEvents(element, biome)
     for child in element.Elements() do indexMonsterEvents(child, biome) end
 end
 
-local function singleplayerSavePath()
-    local session = Game.GameSession
-    local path = session and session.DataPath and (session.DataPath.SavePath or session.DataPath.LoadPath) or "singleplayer"
-    local key = string.gsub(string.lower(tostring(path)), "[^%w_%-]", "_")
-    return E.path("Data/" .. key .. ".txt")
-end
-
-local function loadSingleplayerDiscoveries()
-    unlocked = {}
-    local path = singleplayerSavePath()
-    if not File.Exists(path) then return end
-    for _, value in ipairs(E.splitLines(File.Read(path))) do unlocked[id(value)] = true end
-end
-
-local function saveSingleplayerDiscoveries()
-    local values = {}
-    for value in pairs(unlocked) do values[#values + 1] = value end
-    table.sort(values)
-    File.Write(singleplayerSavePath(), table.concat(values, "\n"))
-end
-
 local function buildDatabase()
     items, creatures, professions, afflictions, reverseCraft, reverseDeconstruct = {}, {}, {}, {}, {}, {}
-    itemByIdentifier, creatureByIdentifier, afflictionByIdentifier = {}, {}, {}
+    itemByIdentifier, creatureByIdentifier, afflictionByIdentifier, professionByIdentifier = {}, {}, {}, {}
     recipeTalents, recipeBlueprints, creatureHabitats = {}, {}, {}
     local seenItems = {}
     for prefab in ItemPrefab.Prefabs do
@@ -258,12 +285,39 @@ local function buildDatabase()
                 itemByIdentifier[entry.identifier] = entry
                 for _, recipe in ipairs(E.each(prefab.FabricationRecipes.Values)) do
                     for _, requirement in ipairs(E.each(recipe.RequiredItems)) do
-                        for _, ingredient in ipairs(E.each(requirement.ItemPrefabs)) do addIndex(reverseCraft, ingredient.Identifier, entry) end
+                        for _, ingredient in ipairs(E.each(requirement.ItemPrefabs)) do
+                            addUniqueEntry(reverseCraft, ingredient.Identifier, entry, function(value) return value.identifier end)
+                        end
                     end
                 end
                 for _, output in ipairs(E.each(prefab.DeconstructItems)) do addIndex(reverseDeconstruct, output.ItemIdentifier, { source = entry, output = output }) end
                 for _, recipeIdentifier in ipairs(E.each(prefab.UnlockedRecipeInToolTip)) do
                     addIndex(recipeBlueprints, recipeIdentifier, entry)
+                end
+            end
+        end
+    end
+    for _, target in ipairs(items) do
+        if target.prefab.ConfigElement ~= nil then
+            for recipe in target.prefab.ConfigElement.GetChildElements("Fabricate") do
+                for requirement in recipe.Elements() do
+                    local elementName = id(requirement.NameAsIdentifier())
+                    if elementName == "item" or elementName == "requireditem" then
+                        local ingredientIdentifier = id(requirement.GetAttributeIdentifier("identifier", ""))
+                        local ingredientTag = id(requirement.GetAttributeIdentifier("tag", ""))
+                        if ingredientIdentifier ~= "" then
+                            addUniqueEntry(reverseCraft, ingredientIdentifier, target, function(value) return value.identifier end)
+                        elseif ingredientTag ~= "" then
+                            for _, candidate in ipairs(items) do
+                                for tag in candidate.prefab.Tags do
+                                    if id(tag) == ingredientTag then
+                                        addUniqueEntry(reverseCraft, candidate.identifier, target, function(value) return value.identifier end)
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -297,15 +351,20 @@ local function buildDatabase()
                 prefab = prefab, identifier = id(prefab.Identifier), name = text(prefab.Name),
                 jobXml = jobXml, treeXml = treeXml
             }
+            professionByIdentifier[professionIdentifier] = professions[#professions]
         end
     end
+    local seenAfflictionNames = {}
     for prefab in AfflictionPrefab.Prefabs do
         if prefab ~= nil and prefab.Identifier ~= nil then
             local entry = { prefab=prefab, identifier=id(prefab.Identifier), name=text(prefab.Name) }
             if entry.name == "" then entry.name = prettyIdentifier(entry.identifier) end
-            if coreAfflictionIdentifiers[entry.identifier] and entry.identifier ~= "" and afflictionByIdentifier[entry.identifier] == nil then
+            local normalizedName = id(entry.name)
+            if coreAfflictionIdentifiers[entry.identifier] and entry.identifier ~= "" and
+                afflictionByIdentifier[entry.identifier] == nil and not seenAfflictionNames[normalizedName] then
                 afflictions[#afflictions + 1] = entry
                 afflictionByIdentifier[entry.identifier] = entry
+                seenAfflictionNames[normalizedName] = true
             end
         end
     end
@@ -453,13 +512,20 @@ local function fallbackSkillIcon(identifier)
     return job and safeField(job, "IconSmall", safeField(job, "Icon", nil)) or nil
 end
 
-local function requirementRow(parent, captionText, iconSprite, tooltip)
+local function requirementRow(parent, captionText, iconSprite, tooltip, onClick)
     local row = GUI.Frame(GUI.RectTransform(UI_VECTOR.REQUIREMENT_ROW, parent, Anchor.TopCenter), "ListBoxElement")
-    local caption = GUI.TextBlock(
-        GUI.RectTransform(UI_VECTOR.REQUIREMENT_TEXT, row.RectTransform, Anchor.CenterLeft),
-        captionText, nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
+    local caption
+    if onClick ~= nil then
+        caption = GUI.Button(GUI.RectTransform(UI_VECTOR.REQUIREMENT_TEXT, row.RectTransform, Anchor.CenterLeft),
+            captionText .. "  ›", Alignment.CenterLeft, "GUIButtonSmall")
+        caption.OnClicked = function() onClick(); return true end
+        caption.ToolTip = tooltip or captionText
+    else
+        caption = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.REQUIREMENT_TEXT, row.RectTransform, Anchor.CenterLeft),
+            captionText, nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
+    end
     caption.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_STANDARD
-    caption.CanBeFocused = false
+    if onClick == nil then caption.CanBeFocused = false end
     local square = GUI.Frame(GUI.RectTransform(UI_VECTOR.REQUIREMENT_ICON_FRAME, row.RectTransform, Anchor.CenterRight), "TalentBackground")
     if iconSprite ~= nil then
         local image = GUI.Image(GUI.RectTransform(UI_VECTOR.REQUIREMENT_ICON, square.RectTransform, Anchor.Center), iconSprite, true)
@@ -468,12 +534,22 @@ local function requirementRow(parent, captionText, iconSprite, tooltip)
         label(square.RectTransform, "?", Alignment.Center, Color(101, 203, 218, 255))
     end
     square.ToolTip = tooltip or captionText
+    square.CanBeFocused = false
 end
 
 local function skillRequirement(parent, identifier, level, displayName, iconSprite)
     local name = text(displayName)
     if name == "" then name = titleCase(identifier) end
-    requirementRow(parent, name .. " skill " .. text(level), iconSprite or fallbackSkillIcon(identifier), name .. " skill required: " .. text(level))
+    local jobIdentifier = skillJobs[id(identifier)]
+    local function openProfession()
+        if jobIdentifier == nil then return end
+        local profession = professionByIdentifier[jobIdentifier]
+        if profession ~= nil then navigateTo("Professions", profession, id(identifier)) end
+    end
+    local tooltip = name .. " skill required: " .. text(level)
+    if jobIdentifier ~= nil then tooltip = tooltip .. "\n\nClick to open the associated profession tree." end
+    requirementRow(parent, name .. " skill " .. text(level), iconSprite or fallbackSkillIcon(identifier), tooltip,
+        jobIdentifier ~= nil and openProfession or nil)
 end
 
 local function recipeUnlockRequirements(parent, prefab)
@@ -505,16 +581,71 @@ local function itemButton(parent, entry, suffix)
         GUI.RectTransform(UI_VECTOR.LINK_TEXT, button.RectTransform, Anchor.CenterRight),
         entry.name .. (suffix or ""), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
     caption.CanBeFocused = false
-    button.OnClicked = function() currentCategory = "Items"; populateList(entry.identifier); showItem(entry); return true end
+    button.OnClicked = function() navigateTo("Items", entry); return true end
     return button
+end
+
+local function conditionRequirementText(minimumCondition, maximumCondition)
+    local minimum = tonumber(minimumCondition) or 0
+    local maximum = tonumber(maximumCondition) or 1
+    if maximum < 1 then return "  •  condition ≤ " .. numberText(maximum * PERCENT_SCALE) .. "%" end
+    if minimum > 0 then return "  •  condition ≥ " .. numberText(minimum * PERCENT_SCALE) .. "%" end
+    return ""
+end
+
+local function recipeIngredient(parent, candidatePrefabs, amount, minimumCondition, maximumCondition)
+    local candidates, seen = {}, {}
+    for _, prefab in ipairs(candidatePrefabs or {}) do
+        local identifier = prefab and id(prefab.Identifier) or ""
+        if identifier ~= "" and not seen[identifier] then
+            seen[identifier] = true
+            candidates[#candidates + 1] = prefab
+        end
+    end
+    table.sort(candidates, function(a, b) return text(a.Name) < text(b.Name) end)
+    local suffix = "  x" .. text(amount) .. conditionRequirementText(minimumCondition, maximumCondition)
+    if #candidates == 1 then
+        local prefab = candidates[1]
+        itemButton(parent, {prefab=prefab, identifier=id(prefab.Identifier), name=text(prefab.Name)}, suffix)
+        return
+    end
+    if #candidates > 1 then
+        local names = {}
+        for _, prefab in ipairs(candidates) do names[#names + 1] = text(prefab.Name) end
+        local first = candidates[1]
+        requirementRow(parent, table.concat(names, " or ") .. suffix,
+            first.InventoryIcon or first.Sprite, "Any one of these ingredients satisfies this slot.")
+        return
+    end
+    line(parent, "Compatible ingredient" .. suffix)
+end
+
+local function itemPrefabsWithTag(tagIdentifier)
+    local matches, targetTag = {}, id(tagIdentifier)
+    if targetTag == "" then return matches end
+    for _, entry in ipairs(items) do
+        for tag in entry.prefab.Tags do
+            if id(tag) == targetTag then matches[#matches + 1] = entry.prefab; break end
+        end
+    end
+    return matches
+end
+
+local function recipeTitle(index, total, displayName)
+    local rawName = id(displayName)
+    local purpose = "Craft new"
+    if rawName == "recycleitem" then purpose = "Refill or recycle"
+    elseif rawName ~= "" then purpose = cleanDisplayText(displayName); if purpose == "" then purpose = prettyIdentifier(displayName) end end
+    if total > 1 then return "Recipe " .. text(index) .. " of " .. text(total) .. "  •  " .. purpose end
+    return purpose
 end
 
 local function renderXmlRecipes(prefab, parent)
     if prefab.ConfigElement == nil then return 0 end
-    local count = 0
-    for recipe in prefab.ConfigElement.GetChildElements("Fabricate") do
-        count = count + 1
-        if count == 1 then heading(parent, "\nCrafting") end
+    local xmlRecipes = E.each(prefab.ConfigElement.GetChildElements("Fabricate"))
+    if #xmlRecipes > 0 then heading(parent, "\nCrafting") end
+    for recipeIndex, recipe in ipairs(xmlRecipes) do
+        if #xmlRecipes > 1 then heading(parent, recipeTitle(recipeIndex, #xmlRecipes, recipe.GetAttributeString("displayname", ""))) end
         local amount = recipe.GetAttributeInt("amount", 1)
         local requiredTime = recipe.GetAttributeFloat("requiredtime", 1)
         local devices = recipe.GetAttributeString("suitablefabricators", "")
@@ -540,16 +671,14 @@ local function renderXmlRecipes(prefab, parent)
                 local identifier = requirement.GetAttributeIdentifier("identifier", "")
                 local quantity = requirement.GetAttributeInt("count", requirement.GetAttributeInt("amount", 1))
                 local ingredient = findItemPrefab(identifier)
-                if ingredient ~= nil then
-                    itemButton(parent, {prefab=ingredient, identifier=id(ingredient.Identifier), name=text(ingredient.Name)}, "  x" .. text(quantity))
-                else
-                    local tag = requirement.GetAttributeIdentifier("tag", "")
-                    line(parent, (text(identifier) ~= "" and text(identifier) or "TAG  " .. text(tag)) .. "  x" .. text(quantity))
-                end
+                local tag = requirement.GetAttributeIdentifier("tag", "")
+                local candidates = ingredient ~= nil and {ingredient} or itemPrefabsWithTag(tag)
+                recipeIngredient(parent, candidates, quantity,
+                    requirement.GetAttributeFloat("mincondition", 0), requirement.GetAttributeFloat("maxcondition", 1))
             end
         end
     end
-    return count
+    return #xmlRecipes
 end
 
 local merchantNames = {
@@ -721,7 +850,9 @@ function showItem(entry)
         end
     else
         heading(detailList.Content.RectTransform, "\nCrafting")
-        for _, recipe in ipairs(recipes) do
+        for recipeIndex, recipe in ipairs(recipes) do
+            if #recipes > 1 then heading(detailList.Content.RectTransform,
+                recipeTitle(recipeIndex, #recipes, safeField(recipe, "DisplayName", ""))) end
             line(detailList.Content.RectTransform, "OUTPUT x" .. text(recipe.Amount) .. "  •  " .. text(recipe.RequiredTime) .. " s")
             line(detailList.Content.RectTransform, "DEVICE  " .. joinedPretty(recipe.SuitableFabricatorIdentifiers))
             local requiredSkills = E.each(recipe.RequiredSkills)
@@ -731,15 +862,16 @@ function showItem(entry)
             end
             if recipe.RequiresRecipe then recipeUnlockRequirements(detailList.Content.RectTransform, p) end
             for _, requirement in ipairs(E.each(recipe.RequiredItems)) do
-                local ingredient = requirement.FirstMatchingPrefab
-                if ingredient ~= nil then itemButton(detailList.Content.RectTransform, {prefab=ingredient, identifier=id(ingredient.Identifier), name=text(ingredient.Name)}, "  x" .. text(requirement.Amount))
-                else line(detailList.Content.RectTransform, "TAG/ALTERNATIVE  x" .. text(requirement.Amount)) end
+                local candidates = E.each(safeField(requirement, "ItemPrefabs", nil))
+                if #candidates == 0 and requirement.FirstMatchingPrefab ~= nil then candidates[1] = requirement.FirstMatchingPrefab end
+                recipeIngredient(detailList.Content.RectTransform, candidates, requirement.Amount,
+                    safeField(requirement, "MinCondition", 0), safeField(requirement, "MaxCondition", 1))
             end
         end
     end
 
     local used = reverseCraft[entry.identifier] or {}
-    if #used > 0 then heading(detailList.Content.RectTransform, "\nUsed to craft") end
+    if #used > 0 then heading(detailList.Content.RectTransform, "\nCan be used to craft") end
     for _, target in ipairs(used) do itemButton(detailList.Content.RectTransform, target) end
 
     local outputs, combinedOutputs = E.each(p.DeconstructItems), {}
@@ -824,11 +956,6 @@ end
 
 local function showCreature(entry)
     clear(detailList)
-    if not unlocked[entry.identifier] then
-        heading(detailList.Content.RectTransform, "?????????")
-        line(detailList.Content.RectTransform, "Unknown Creature\n\nKill this species with your crew to unlock its full entry.")
-        return
-    end
     local p = entry.prefab
     heading(detailList.Content.RectTransform, entry.name)
     local wiki = wikiCreatures[entry.identifier]
@@ -881,9 +1008,29 @@ local function findTalent(identifier)
     return nil
 end
 
-local function talentTile(parent, identifier)
+local function afflictionIcon(prefab)
+    local icon = safeField(prefab, "Icon", nil)
+    if icon ~= nil then return icon end
+    local afflictionType = id(safeField(prefab, "AfflictionType", safeField(prefab, "Type", "")))
+    for candidate in AfflictionPrefab.Prefabs do
+        local candidateType = id(safeField(candidate, "AfflictionType", safeField(candidate, "Type", "")))
+        local candidateIcon = safeField(candidate, "Icon", nil)
+        if afflictionType ~= "" and candidateType == afflictionType and candidateIcon ~= nil then return candidateIcon end
+    end
+    for _, fallbackIdentifier in ipairs({"stun", "psychosis", "oxygenlow"}) do
+        for candidate in AfflictionPrefab.Prefabs do
+            if id(candidate.Identifier) == fallbackIdentifier then
+                local fallbackIcon = safeField(candidate, "Icon", nil)
+                if fallbackIcon ~= nil then return fallbackIcon end
+            end
+        end
+    end
+    return nil
+end
+
+local function talentTile(parent, identifier, tileSize)
     local talent = findTalent(identifier)
-    local tile = GUI.Frame(GUI.RectTransform(UI_VECTOR.TALENT_TILE, parent, Anchor.CenterLeft), "TalentBackground")
+    local tile = GUI.Frame(GUI.RectTransform(tileSize or UI_VECTOR.TALENT_TILE, parent, Anchor.CenterLeft), "TalentBackground")
     if talent ~= nil and talent.Icon ~= nil then
         local image = GUI.Image(GUI.RectTransform(UI_VECTOR.TALENT_ICON, tile.RectTransform, Anchor.Center), talent.Icon, true)
         image.CanBeFocused = false
@@ -894,7 +1041,14 @@ local function talentTile(parent, identifier)
     return tile
 end
 
-local function showProfession(entry)
+local function centeredTalentTiles(layout, identifiers, tileSize, tileWidth)
+    local spacerWidth = math.max(0, (1 - #identifiers * tileWidth) / 2)
+    if spacerWidth > 0 then GUI.Frame(GUI.RectTransform(relativeVector(spacerWidth, 1), layout), nil) end
+    for _, identifier in ipairs(identifiers) do talentTile(layout, identifier, tileSize) end
+    if spacerWidth > 0 then GUI.Frame(GUI.RectTransform(relativeVector(spacerWidth, 1), layout), nil) end
+end
+
+local function showProfession(entry, focusSkill)
     clear(detailList)
     local p = entry.prefab
     local header = GUI.Frame(GUI.RectTransform(UI_VECTOR.PROFESSION_HEADER, detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
@@ -919,8 +1073,14 @@ local function showProfession(entry)
         local range = xmlAttribute(skillTag, "level", "0")
         if identifier ~= "" then
             skillCount = skillCount + 1
-            iconInfoRow(detailList.Content.RectTransform, fallbackSkillIcon(identifier),
-                prettyIdentifier(identifier), range .. " starting skill", palette.cream)
+            if id(identifier) == id(focusSkill) then
+                requirementRow(detailList.Content.RectTransform,
+                    string.upper(prettyIdentifier(identifier)) .. "  •  " .. range .. " starting skill",
+                    fallbackSkillIcon(identifier), "Crafting requirement points to this profession skill.")
+            else
+                iconInfoRow(detailList.Content.RectTransform, fallbackSkillIcon(identifier),
+                    prettyIdentifier(identifier), range .. " starting skill", palette.cream)
+            end
         end
     end
     if skillCount == 0 then line(detailList.Content.RectTransform, "No starting-skill definition was found for this loaded profession.") end
@@ -931,13 +1091,56 @@ local function showProfession(entry)
         line(detailList.Content.RectTransform, "This loaded profession does not expose a talent tree.")
         return
     end
+    local paths, maximumStages = {}, 0
     for subtreeTag, subtreeBody in string.gmatch(treeXml, "<[Ss]ub[Tt]ree([^>]*)>(.-)</[Ss]ub[Tt]ree>") do
-        heading(detailList.Content.RectTransform, prettyIdentifier(xmlAttribute(subtreeTag, "identifier", "Talent path")))
+        local path = {
+            name=prettyIdentifier(xmlAttribute(subtreeTag, "identifier", "Talent path")),
+            pathType=id(xmlAttribute(subtreeTag, "type", "specialization")), stages={}
+        }
         for stageBody in string.gmatch(subtreeBody, "<[Tt]alent[Oo]ptions[^>]*>(.-)</[Tt]alent[Oo]ptions>") do
-            local row = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.TALENT_ROW, detailList.Content.RectTransform, Anchor.TopCenter), true, Anchor.CenterLeft)
+            local stage = {}
             for optionTag in string.gmatch(stageBody, "<[Tt]alent[Oo]ption%s+([^>/]-)/?>") do
                 local identifier = xmlAttribute(optionTag, "identifier", "")
-                if identifier ~= "" then talentTile(row.RectTransform, identifier) end
+                if identifier ~= "" then stage[#stage + 1] = identifier end
+            end
+            path.stages[#path.stages + 1] = stage
+        end
+        maximumStages = math.max(maximumStages, #path.stages)
+        paths[#paths + 1] = path
+    end
+    for _, path in ipairs(paths) do
+        if path.pathType == "primary" then
+            heading(detailList.Content.RectTransform, path.name)
+            for _, stage in ipairs(path.stages) do
+                local primaryFrame = GUI.Frame(GUI.RectTransform(UI_VECTOR.TALENT_PRIMARY_ROW, detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
+                primaryFrame.Color = TALENT_ROW_COLOR
+                local primaryOptions = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.TALENT_PATH_OPTIONS, primaryFrame.RectTransform, Anchor.Center), true, Anchor.CenterLeft)
+                centeredTalentTiles(primaryOptions.RectTransform, stage, UI_VECTOR.TALENT_PRIMARY_TILE, TALENT_PRIMARY_TILE_WIDTH)
+            end
+        end
+    end
+    local specializations = {}
+    maximumStages = 0
+    for _, path in ipairs(paths) do
+        if path.pathType ~= "primary" then
+            specializations[#specializations + 1] = path
+            maximumStages = math.max(maximumStages, #path.stages)
+        end
+    end
+    local treeHeight = TALENT_TREE_BASE_HEIGHT + maximumStages * TALENT_TREE_STAGE_HEIGHT
+    local tree = GUI.Frame(GUI.RectTransform(relativeVector(1, treeHeight), detailList.Content.RectTransform, Anchor.TopCenter), "InnerFrame")
+    local columnAnchors = {Anchor.TopLeft, Anchor.TopCenter, Anchor.TopRight}
+    for pathIndex, path in ipairs(specializations) do
+        if pathIndex <= #columnAnchors then
+            local column = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.TALENT_COLUMN, tree.RectTransform, columnAnchors[pathIndex]), false, Anchor.TopCenter)
+            local columnRowHeight = 1 / (#path.stages + 1)
+            local pathHeader = GUI.Button(GUI.RectTransform(relativeVector(1, columnRowHeight), column.RectTransform), string.upper(path.name), Alignment.Center, "GUIButtonSmall")
+            pathHeader.Enabled = false
+            for _, stage in ipairs(path.stages) do
+                local stageFrame = GUI.Frame(GUI.RectTransform(relativeVector(1, columnRowHeight), column.RectTransform), "InnerFrame")
+                stageFrame.Color = TALENT_ROW_COLOR
+                local options = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.TALENT_PATH_OPTIONS, stageFrame.RectTransform, Anchor.Center), true, Anchor.CenterLeft)
+                centeredTalentTiles(options.RectTransform, stage, UI_VECTOR.TALENT_TILE, TALENT_TILE_WIDTH)
             end
         end
     end
@@ -994,7 +1197,7 @@ end
 local showAffliction
 local function afflictionButton(parent, entry, suffix)
     local button = GUI.Button(GUI.RectTransform(UI_VECTOR.LINK_ROW, parent, Anchor.TopCenter), "", Alignment.CenterLeft, "ListBoxElement")
-    local sprite = safeField(entry.prefab, "Icon", nil)
+    local sprite = afflictionIcon(entry.prefab)
     if sprite ~= nil then
         local icon = GUI.Image(GUI.RectTransform(UI_VECTOR.LINK_ICON, button.RectTransform, Anchor.CenterLeft), sprite, true)
         icon.CanBeFocused = false
@@ -1002,16 +1205,14 @@ local function afflictionButton(parent, entry, suffix)
     local caption = GUI.TextBlock(GUI.RectTransform(UI_VECTOR.LINK_TEXT, button.RectTransform, Anchor.CenterRight),
         entry.name .. (suffix or ""), nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
     caption.CanBeFocused = false
-    button.OnClicked = function()
-        currentCategory = "Afflictions"; populateList(entry.identifier); showAffliction(entry); return true
-    end
+    button.OnClicked = function() navigateTo("Afflictions", entry); return true end
     return button
 end
 
 showAffliction = function(entry)
     clear(detailList)
     local p = entry.prefab
-    local icon = safeField(p, "Icon", nil)
+    local icon = afflictionIcon(p)
     local afflictionType = text(safeField(p, "AfflictionType", safeField(p, "Type", "Affliction")))
     iconInfoRow(detailList.Content.RectTransform, icon, entry.name, prettyIdentifier(afflictionType), palette.cyan)
     local description = cleanDisplayText(safeField(p, "Description", ""))
@@ -1059,6 +1260,20 @@ showAffliction = function(entry)
     for _, link in ipairs(causes) do itemButton(detailList.Content.RectTransform, link.entry, "  •  applies " .. numberText(link.strength)) end
 end
 
+navigateTo = function(category, entry, focus)
+    if entry == nil then return end
+    currentCategory = category
+    currentSearch = ""
+    if searchBox ~= nil then searchBox.Text = "" end
+    if itemFilterControls ~= nil then itemFilterControls.Visible = category == "Items" end
+    populateList()
+    for tabCategory, button in pairs(tabButtons) do button.Selected = tabCategory == category end
+    if category == "Bestiary" then showCreature(entry)
+    elseif category == "Items" then showItem(entry)
+    elseif category == "Professions" then showProfession(entry, focus)
+    else showAffliction(entry) end
+end
+
 function populateList(forceSearch)
     if listBox == nil then return end
     if forceSearch ~= nil then currentSearch = forceSearch; searchBox.Text = forceSearch end
@@ -1076,17 +1291,17 @@ function populateList(forceSearch)
         elseif currentCategory == "Afflictions" then
             category = text(safeField(entry.prefab, "AfflictionType", safeField(entry.prefab, "Type", "")))
         end
-        if E.contains(entry.name, currentSearch) or E.contains(entry.identifier, currentSearch) or E.contains(tags, currentSearch) or E.contains(category, currentSearch) then
+        local matchesItemFilter = currentCategory ~= "Items" or itemCategoryFilter == "All" or itemFilterCategory(entry) == itemCategoryFilter
+        if matchesItemFilter and (E.contains(entry.name, currentSearch) or E.contains(entry.identifier, currentSearch) or E.contains(tags, currentSearch) or E.contains(category, currentSearch)) then
             shown = shown + 1
             if shown <= limit then
                 local label = entry.name
-                if currentCategory == "Bestiary" and not unlocked[entry.identifier] then label = "?????????\nUnknown Creature" end
                 local button = GUI.Button(GUI.RectTransform(UI_VECTOR.INDEX_ROW, listBox.Content.RectTransform), "", Alignment.CenterLeft, "ListBoxElement")
                 if currentCategory ~= "Bestiary" then
                     local sprite = nil
                     if currentCategory == "Items" then sprite = entry.prefab.InventoryIcon or entry.prefab.Sprite
                     elseif currentCategory == "Professions" then sprite = safeField(entry.prefab, "IconSmall", safeField(entry.prefab, "Icon", nil))
-                    elseif currentCategory == "Afflictions" then sprite = safeField(entry.prefab, "Icon", nil) end
+                    elseif currentCategory == "Afflictions" then sprite = afflictionIcon(entry.prefab) end
                     if sprite ~= nil then
                         local icon = GUI.Image(GUI.RectTransform(UI_VECTOR.INDEX_ICON, button.RectTransform, Anchor.CenterLeft), sprite, true)
                         if currentCategory == "Items" then
@@ -1101,10 +1316,7 @@ function populateList(forceSearch)
                     label, nil, GUI.Style.SmallFont, Alignment.CenterLeft, false, "")
                 caption.CanBeFocused = false
                 button.OnClicked = function()
-                    if currentCategory == "Bestiary" then showCreature(entry)
-                    elseif currentCategory == "Items" then showItem(entry)
-                    elseif currentCategory == "Professions" then showProfession(entry)
-                    else showAffliction(entry) end
+                    navigateTo(currentCategory, entry)
                     return true
                 end
             end
@@ -1119,6 +1331,7 @@ local function selectCategory(name)
     if searchBox then searchBox.Text = "" end
     populateList()
     clear(detailList)
+    if itemFilterControls ~= nil then itemFilterControls.Visible = name == "Items" end
     for category, button in pairs(tabButtons) do button.Selected = category == name end
     heading(detailList.Content.RectTransform, name)
     if name == "Items" then
@@ -1164,14 +1377,30 @@ local function createWindow()
         b.OnClicked = function() selectCategory(category); return true end
         tabButtons[category] = b
     end
-
     local body = GUI.Frame(GUI.RectTransform(UI_VECTOR.BODY, padded.RectTransform, Anchor.BottomCenter), nil)
     local left = GUI.Frame(GUI.RectTransform(UI_VECTOR.INDEX_PANEL, body.RectTransform, Anchor.BottomLeft), "InnerFrame")
     local right = GUI.Frame(GUI.RectTransform(UI_VECTOR.DETAIL_PANEL, body.RectTransform, Anchor.BottomRight), "InnerFrame")
     local listHeader = GUI.Frame(GUI.RectTransform(UI_VECTOR.PANEL_HEADER, left.RectTransform, Anchor.TopCenter), nil)
-    label(listHeader.RectTransform, "INDEX", Alignment.CenterLeft, Color(101, 203, 218, 255))
+    local listHeaderTitle = GUI.Frame(GUI.RectTransform(UI_VECTOR.LIST_HEADER_TITLE, listHeader.RectTransform, Anchor.CenterLeft), nil)
+    label(listHeaderTitle.RectTransform, "INDEX", Alignment.CenterLeft, Color(101, 203, 218, 255))
+    itemFilterControls = GUI.LayoutGroup(GUI.RectTransform(UI_VECTOR.FILTER_CONTROLS, listHeader.RectTransform, Anchor.CenterRight), true, Anchor.CenterRight)
+    local previousFilter = GUI.Button(GUI.RectTransform(UI_VECTOR.FILTER_PREVIOUS, itemFilterControls.RectTransform), "‹", Alignment.Center, "GUIButtonSmall")
+    itemFilterLabel = GUI.Button(GUI.RectTransform(UI_VECTOR.FILTER_LABEL, itemFilterControls.RectTransform), "ALL", Alignment.Center, "GUIButtonSmall")
+    itemFilterLabel.Enabled = false
+    local nextFilter = GUI.Button(GUI.RectTransform(UI_VECTOR.FILTER_NEXT, itemFilterControls.RectTransform), "›", Alignment.Center, "GUIButtonSmall")
+    local function cycleFilter(direction)
+        local selectedIndex = 1
+        for index, name in ipairs(itemFilterNames) do if name == itemCategoryFilter then selectedIndex = index; break end end
+        selectedIndex = ((selectedIndex - 1 + direction) % #itemFilterNames) + 1
+        itemCategoryFilter = itemFilterNames[selectedIndex]
+        itemFilterLabel.Text = string.upper(itemCategoryFilter)
+        populateList()
+    end
+    previousFilter.OnClicked = function() cycleFilter(-1); return true end
+    nextFilter.OnClicked = function() cycleFilter(1); return true end
     local detailHeader = GUI.Frame(GUI.RectTransform(UI_VECTOR.PANEL_HEADER, right.RectTransform, Anchor.TopCenter), nil)
-    label(detailHeader.RectTransform, "ARCHIVE RECORD", Alignment.CenterLeft, Color(101, 203, 218, 255))
+    local detailHeaderTitle = GUI.Frame(GUI.RectTransform(UI_VECTOR.DETAIL_HEADER_TITLE, detailHeader.RectTransform, Anchor.CenterLeft), nil)
+    label(detailHeaderTitle.RectTransform, "ARCHIVE RECORD", Alignment.CenterLeft, Color(101, 203, 218, 255))
     listBox = GUI.ListBox(GUI.RectTransform(UI_VECTOR.PANEL_LIST, left.RectTransform, Anchor.BottomCenter))
     detailList = GUI.ListBox(GUI.RectTransform(UI_VECTOR.PANEL_LIST, right.RectTransform, Anchor.BottomCenter))
     selectCategory("Bestiary")
@@ -1238,9 +1467,7 @@ local function openFocusedEntry()
     visible = true
     if window == nil then createWindow() end
     window.Visible = true
-    selectCategory(category)
-    populateList(entry.identifier)
-    if category == "Items" then showItem(entry) else showCreature(entry) end
+    navigateTo(category, entry)
     print("[Europa Encyclopedia] opened focused " .. string.lower(category) .. " entry: " .. entry.name)
     return true
 end
@@ -1262,28 +1489,6 @@ local function updateContextHint()
     contextHint.Visible = true
     contextHint.AddToGUIUpdateList(false, GUI_ORDER.CONTEXT_HINT)
 end
-
-Networking.Receive(NET_SYNC, function(msg)
-    unlocked = {}
-    for value in string.gmatch(msg.ReadString() or "", "[^;]+") do unlocked[value] = true end
-    local newly = msg.ReadString()
-    if newly ~= "" then
-        local prefab = findCharacterPrefab(newly)
-        GUI.AddMessage("NEW BESTIARY ENTRY\n" .. (prefab and text(prefab.Name) or newly) .. "\nAdded to the Europa Encyclopedia.", Color(92, 185, 201, 255))
-        if currentCategory == "Bestiary" then populateList() end
-    end
-end)
-
-Hook.Add("character.death", "EuropaEncyclopedia.SingleplayerDiscover", function(character)
-    if not Game.IsSingleplayer or character == nil or character.IsHuman or character.SpeciesName == nil then return end
-    local identifier = id(character.SpeciesName)
-    if identifier == "" or unlocked[identifier] then return end
-    unlocked[identifier] = true
-    saveSingleplayerDiscoveries()
-    local prefab = findCharacterPrefab(identifier)
-    GUI.AddMessage("NEW BESTIARY ENTRY\n" .. (prefab and text(prefab.Name) or identifier) .. "\nAdded to the Europa Encyclopedia.", Color(92, 185, 201, 255))
-    if currentCategory == "Bestiary" then populateList() end
-end)
 
 Hook.Add("think", "EuropaEncyclopedia.Input", function()
     updateContextHint()
@@ -1313,53 +1518,8 @@ Game.AddCommand("encyclopedia_corpse", "Single player: spawn a creature at the c
     Timer.Wait(function() Game.ExecuteCommand("killmonsters") end, DELAY_MS.CORPSE_TEST)
 end)
 
-Game.AddCommand("encyclopedia_test", "Single player: unlock a bestiary species, all species, or reset", function(args)
-    if not Game.IsSingleplayer then
-        print("[Europa Encyclopedia] encyclopedia_test is available in single player only.")
-        return
-    end
-    local target = id(args and args[1] or "")
-    if target == "" then
-        print("[Europa Encyclopedia] Usage: encyclopedia_test <species identifier|all|reset>")
-        return
-    end
-    if target == "reset" then
-        unlocked = {}
-        saveSingleplayerDiscoveries()
-        if currentCategory == "Bestiary" then populateList() end
-        print("[Europa Encyclopedia] Bestiary test discoveries reset.")
-        return
-    end
-    if target == "all" then
-        local count = 0
-        for _, entry in ipairs(creatures) do
-            if not unlocked[entry.identifier] then count = count + 1 end
-            unlocked[entry.identifier] = true
-        end
-        saveSingleplayerDiscoveries()
-        if currentCategory == "Bestiary" then populateList() end
-        print("[Europa Encyclopedia] Unlocked all bestiary entries (" .. text(count) .. " new).")
-        return
-    end
-    local prefab = findCharacterPrefab(target)
-    if prefab == nil or target == "human" then
-        print("[Europa Encyclopedia] Unknown creature identifier: " .. target)
-        return
-    end
-    unlocked[target] = true
-    saveSingleplayerDiscoveries()
-    if currentCategory == "Bestiary" then populateList(target) end
-    print("[Europa Encyclopedia] Unlocked " .. text(prefab.Name) .. " (" .. target .. ").")
-end)
-
 Hook.Add("stop", "EuropaEncyclopedia.Stop", function() if window ~= nil then window.Visible = false end end)
 
 Timer.Wait(function()
     buildDatabase()
-    if Game.IsSingleplayer then
-        loadSingleplayerDiscoveries()
-    elseif Game.IsMultiplayer then
-        local msg = Networking.Start(NET_REQUEST)
-        Networking.Send(msg)
-    end
 end, DELAY_MS.DATABASE_BUILD)

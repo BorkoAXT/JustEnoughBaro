@@ -35,9 +35,3 @@ end
 function E.contains(haystack, needle)
     return string.find(string.lower(haystack or ""), string.lower(needle or ""), 1, true) ~= nil
 end
-
-function E.splitLines(text)
-    local result = {}
-    for line in string.gmatch(text or "", "[^\r\n]+") do result[#result + 1] = line end
-    return result
-end
