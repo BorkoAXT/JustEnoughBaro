@@ -1,6 +1,21 @@
 EuropaEncyclopedia = EuropaEncyclopedia or {}
 local E = EuropaEncyclopedia
 
+local PACKAGE_NAME = "Europa Encyclopedia"
+
+local function resolveModDirectory()
+    for package in ContentPackageManager.EnabledPackages.All do
+        if tostring(package.Name) == PACKAGE_NAME then return tostring(package.Dir) end
+    end
+    error(PACKAGE_NAME .. " is not present in the enabled content packages")
+end
+
+E.modDirectory = resolveModDirectory()
+
+function E.path(relativePath)
+    return E.modDirectory .. "/" .. string.gsub(relativePath, "^[/\\]+", "")
+end
+
 function E.str(value)
     if value == nil then return "" end
     return tostring(value)

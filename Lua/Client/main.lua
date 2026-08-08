@@ -1,5 +1,5 @@
 local E = EuropaEncyclopedia
-local wikiCreatures = dofile("LocalMods/Europa Encyclopedia/Lua/Client/wiki_data.lua") or {}
+local wikiCreatures = dofile(E.path("Lua/Client/wiki_data.lua")) or {}
 local NET_SYNC = "europaencyclopedia.sync"
 local NET_REQUEST = "europaencyclopedia.request"
 local unlocked, items, creatures, professions, afflictions = {}, {}, {}, {}, {}
@@ -13,7 +13,7 @@ local tabButtons = {}
 local toggle
 local currentSearch, visible = "", false
 local DEFAULT_SETTINGS = { openKey = "J", pageSize = 80 }
-local settings = dofile("LocalMods/Europa Encyclopedia/config.lua") or DEFAULT_SETTINGS
+local settings = dofile(E.path("config.lua")) or DEFAULT_SETTINGS
 local GUIStatic = LuaUserData.CreateStatic("Barotrauma.GUI", true)
 local TalentPrefab = LuaUserData.CreateStatic("Barotrauma.TalentPrefab", true)
 local AfflictionPrefab = LuaUserData.CreateStatic("Barotrauma.AfflictionPrefab", true)
@@ -224,7 +224,7 @@ local function singleplayerSavePath()
     local session = Game.GameSession
     local path = session and session.DataPath and (session.DataPath.SavePath or session.DataPath.LoadPath) or "singleplayer"
     local key = string.gsub(string.lower(tostring(path)), "[^%w_%-]", "_")
-    return "LocalMods/Europa Encyclopedia/Data/" .. key .. ".txt"
+    return E.path("Data/" .. key .. ".txt")
 end
 
 local function loadSingleplayerDiscoveries()
@@ -361,8 +361,10 @@ end
 
 local function wikiCreatureSprite(entry)
     local wiki = wikiCreatures[entry.identifier]
-    if wiki == nil or wiki.image == nil or wiki.image == "" or not File.Exists(wiki.image) then return nil end
-    return Sprite(wiki.image, UI_VECTOR.IMAGE_CENTER)
+    if wiki == nil or wiki.image == nil or wiki.image == "" then return nil end
+    local imagePath = E.path(wiki.image)
+    if not File.Exists(imagePath) then return nil end
+    return Sprite(imagePath, UI_VECTOR.IMAGE_CENTER)
 end
 
 local function showImageOverlay(sprite, titleText)

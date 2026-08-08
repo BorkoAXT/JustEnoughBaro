@@ -50,7 +50,7 @@ for record in "${creatures[@]}"; do
   if [[ -n "$image_url" ]]; then
     image_url="https://barotraumagame.com${image_url}"
     if curl -L --fail --silent --show-error "$image_url" -o "$asset_dir/$identifier.png"; then
-      image_path="LocalMods/Europa Encyclopedia/Assets/Creatures/$identifier.png"
+      image_path="Assets/Creatures/$identifier.png"
     fi
   fi
   description="${description//]=]/] = ]}"

@@ -12,7 +12,7 @@ local function safeKey()
     return string.gsub(string.lower(raw), "[^%w_%-]", "_")
 end
 
-local function savePath() return "LocalMods/Europa Encyclopedia/Data/" .. currentKey .. ".txt" end
+local function savePath() return E.path("Data/" .. currentKey .. ".txt") end
 
 local function load()
     unlocked = {}
