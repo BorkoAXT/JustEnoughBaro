@@ -15,7 +15,7 @@ A dynamic in-game journal for Barotrauma, implemented with LuaCsForBarotrauma.
 - Deconstruction outputs, conditions/chances, and an automatically generated source index.
 - Clickable ingredient, output, reverse-crafting, and deconstruction-source navigation.
 - Lazy detail pages and capped list population for large mod packs.
-- Barotrauma-native GUI styles; press **J** to toggle (editable in `config.lua`).
+- Barotrauma-native GUI styles with an in-game configurable open key.
 
 ## Install
 
@@ -36,7 +36,10 @@ LuaCs documentation and installer: https://github.com/evilfactory/LuaCsForBarotr
 
 ## Configuration
 
-Edit `config.lua` before launch. `openKey` accepts an XNA `Keys` enum name. `pageSize` limits instantiated search rows; refining the search reveals the rest.
+Change the encyclopedia key in Barotrauma's mod settings. Enter an XNA key name
+such as `J`, `K`, or `F6`; invalid values fall back to `J`. The `pageSize` value
+in `config.lua` limits instantiated search rows, and refining the search reveals
+the remaining results.
 
 ## Code style
 

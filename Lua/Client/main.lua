@@ -1,19 +1,27 @@
 local E = EuropaEncyclopedia
 local wikiCreatures = dofile(E.path("Lua/Client/wiki_data.lua")) or {}
-local items, creatures, professions, afflictions = {}, {}, {}, {}
+local roleGuides = dofile(E.path("Lua/Client/role_guides.lua")) or {}
+local submarineWikiData = dofile(E.path("Lua/Client/submarine_wiki_data.lua")) or {}
+local items, creatures, submarines, professions, afflictions = {}, {}, {}, {}, {}
 local itemByIdentifier, creatureByIdentifier = {}, {}
 local afflictionByIdentifier = {}
 local professionByIdentifier = {}
 local reverseCraft, reverseDeconstruct = {}, {}
 local recipeTalents, recipeBlueprints = {}, {}
 local creatureHabitats = {}
-local window, listBox, detailList, searchBox, currentCategory, imageOverlay, contextHint, contextHintText
-local itemFilterControls, itemFilterLabel
+local backdrop, window, listBox, detailList, searchBox, currentCategory
+local imageOverlay, contextHint, contextHintText
+local itemFilterControls, itemFilterLabel, detailHeaderLabel
+local backButton, forwardButton
 local tabButtons = {}
 local toggle
 local navigateTo
 local populateList
 local showItem
+local selectCategory
+local navigationHistory = {}
+local navigationPosition = 0
+local isRestoringHistory = false
 local currentSearch, visible = "", false
 local itemCategoryFilter = "All"
 local DEFAULT_SETTINGS = { openKey = "J", pageSize = 80 }
@@ -22,6 +30,7 @@ local GUIStatic = LuaUserData.CreateStatic("Barotrauma.GUI", true)
 local TalentPrefab = LuaUserData.CreateStatic("Barotrauma.TalentPrefab", true)
 local AfflictionPrefab = LuaUserData.CreateStatic("Barotrauma.AfflictionPrefab", true)
 local EventPrefab = LuaUserData.CreateStatic("Barotrauma.EventPrefab", true)
+local SubmarineInfo = LuaUserData.CreateStatic("Barotrauma.SubmarineInfo", true)
 local Sprite = LuaUserData.CreateStatic("Barotrauma.Sprite", true)
 local InventoryStatic = LuaUserData.CreateStatic("Barotrauma.Inventory", true)
 local GUI = {
@@ -45,6 +54,44 @@ local Keys = LuaUserData.CreateEnumTable("Microsoft.Xna.Framework.Input.Keys")
 local Anchor = LuaUserData.CreateEnumTable("Barotrauma.Anchor")
 local Alignment = LuaUserData.CreateEnumTable("Barotrauma.Alignment")
 local openKey = Keys[settings.openKey] or Keys.J
+local openKeyName = settings.openKey or "J"
+local openKeySetting
+
+local function applyOpenKey(value)
+    local requestedName = E.str(value)
+    local requestedKey = Keys[requestedName]
+    if requestedKey == nil then
+        requestedName = "J"
+        requestedKey = Keys.J
+        print("[Europa Encyclopedia] Unknown key name; using J instead.")
+    end
+    openKeyName = requestedName
+    openKey = requestedKey
+end
+
+local function loadInGameSettings()
+    local loaded, errorMessage = pcall(function()
+        local packageFound, contentPackage = trygetpackage("Europa Encyclopedia")
+        if not packageFound then
+            return
+        end
+        local settingFound, setting =
+            ConfigService.TryGetConfig(SettingBase.String, contentPackage, "OpenKey")
+        if not settingFound then
+            return
+        end
+        openKeySetting = setting
+        applyOpenKey(setting.Value)
+        setting.OnValueChanged.add(function(changedSetting)
+            applyOpenKey(changedSetting.Value)
+        end)
+    end)
+    if not loaded then
+        print("[Europa Encyclopedia] Could not load in-game key setting: " .. E.str(errorMessage))
+    end
+end
+
+loadInGameSettings()
 local FULL_RELATIVE_SIZE = 1
 
 local function relativeVector(width, height)
@@ -64,18 +111,18 @@ local UI_VECTOR = {
     OVERLAY_INNER = relativeVector(0.97, 0.96),
     OVERLAY_TITLE = relativeVector(0.86, 0.08),
     OVERLAY_CLOSE = relativeVector(0.09, 0.08),
-    OVERLAY_IMAGE = relativeVector(0.94, 0.84),
-    INFO_ROW = relativeVector(1, 0.052),
+    OVERLAY_IMAGE = relativeVector(0.78, 0.78),
+    INFO_ROW = relativeVector(1, 0.058),
     INFO_KEY = relativeVector(0.27, 1),
     INFO_VALUE = relativeVector(0.70, 1),
-    ICON_INFO_ROW = relativeVector(1, 0.074),
+    ICON_INFO_ROW = relativeVector(1, 0.082),
     ICON_INFO_ICON = relativeVector(0.075, 0.78),
     ICON_INFO_TEXT = relativeVector(0.89, 1),
-    REQUIREMENT_ROW = relativeVector(1, 0.09),
+    REQUIREMENT_ROW = relativeVector(1, 0.095),
     REQUIREMENT_TEXT = relativeVector(0.82, 1),
     REQUIREMENT_ICON_FRAME = relativeVector(0.105, 0.86),
     REQUIREMENT_ICON = relativeVector(0.76, 0.76),
-    LINK_ROW = relativeVector(1, 0.072),
+    LINK_ROW = relativeVector(1, 0.078),
     LINK_ICON = relativeVector(0.11, 0.82),
     LINK_TEXT = relativeVector(0.86, 1),
     ITEM_HERO = relativeVector(1, 0.18),
@@ -94,38 +141,41 @@ local UI_VECTOR = {
     PROFESSION_ICON = relativeVector(0.16, 0.80),
     PROFESSION_TITLE = relativeVector(0.78, 0.46),
     PROFESSION_SUMMARY = relativeVector(0.78, 0.50),
-    INDEX_ROW = relativeVector(1, 0.082),
+    INDEX_ROW = relativeVector(1, 0.076),
     INDEX_ICON = relativeVector(0.13, 0.82),
-    WINDOW = relativeVector(0.72, 0.72),
-    WINDOW_PADDING = relativeVector(0.965, 0.95),
-    HEADER = relativeVector(1, 0.09),
-    HEADER_TITLE_AREA = relativeVector(0.58, 1),
-    HEADER_TITLE = relativeVector(0.95, 1),
-    HEADER_CONTROLS = relativeVector(0.40, 1),
-    SEARCH_AREA = relativeVector(0.84, 0.62),
+    WINDOW = relativeVector(0.84, 0.84),
+    WINDOW_PADDING = relativeVector(0.972, 0.965),
+    HEADER = relativeVector(1, 0.115),
+    HEADER_ACCENT = relativeVector(0.012, 0.72),
+    HEADER_TITLE_AREA = relativeVector(0.43, 1),
+    HEADER_TITLE = relativeVector(0.90, 0.72),
+    HEADER_CONTROLS = relativeVector(0.55, 1),
+    HISTORY_BUTTON = relativeVector(0.12, 0.54),
+    SEARCH_AREA = relativeVector(0.61, 0.54),
     SEARCH_BOX = relativeVector(0.98, 1),
     HEADER_CLOSE = relativeVector(0.14, 0.62),
-    TABS = relativeVector(1, 0.065),
-    TAB_BUTTON = relativeVector(0.247, 0.86),
-    BODY = relativeVector(1, 0.79),
-    INDEX_PANEL = relativeVector(0.315, 1),
-    DETAIL_PANEL = relativeVector(0.67, 1),
-    PANEL_HEADER = relativeVector(0.94, 0.06),
-    PANEL_LIST = relativeVector(0.94, 0.90),
+    TABS = relativeVector(1, 0.06),
+    TAB_BUTTON = relativeVector(0.198, 0.86),
+    BODY = relativeVector(1, 0.765),
+    INDEX_PANEL = relativeVector(0.30, 1),
+    DETAIL_PANEL = relativeVector(0.685, 1),
+    PANEL_HEADER = relativeVector(0.94, 0.072),
+    PANEL_LIST = relativeVector(0.94, 0.875),
     FILTER_PREVIOUS = relativeVector(0.14, 0.82),
     FILTER_LABEL = relativeVector(0.68, 0.82),
     FILTER_NEXT = relativeVector(0.14, 0.82),
     FILTER_CONTROLS = relativeVector(0.76, 1),
     LIST_HEADER_TITLE = relativeVector(0.22, 1),
     DETAIL_HEADER_TITLE = relativeVector(0.78, 1),
-    CONTEXT_HINT = relativeVector(0.34, 0.05),
+    CONTEXT_HINT = relativeVector(0.26, 0.052),
     CONTEXT_HINT_TEXT = relativeVector(0.96, 1),
     OFFSET_SMALL = relativeVector(0.012, 0),
     OFFSET_INFO = relativeVector(0.015, 0),
     OFFSET_STANDARD = relativeVector(0.02, 0),
-    OFFSET_TITLE = relativeVector(0.025, 0),
-    OFFSET_TABS = relativeVector(0, 0.105),
-    OFFSET_CONTEXT_HINT = relativeVector(0, -0.08),
+    OFFSET_HEADER_ACCENT = relativeVector(0.012, 0),
+    OFFSET_TITLE = relativeVector(0.045, 0),
+    OFFSET_TABS = relativeVector(0, 0.13),
+    OFFSET_CONTEXT_HINT = relativeVector(0, -0.025),
 }
 local ITEM_CATEGORY = {
     STRUCTURE = 1,
@@ -147,7 +197,7 @@ local ITEM_CATEGORY = {
 local NUMBER_PRECISION = 1000
 local NUMBER_EPSILON = 0.0005
 local PERCENT_SCALE = 100
-local GUI_ORDER = { CONTEXT_HINT = 0, WINDOW = 1000, IMAGE_OVERLAY = 1001 }
+local GUI_ORDER = { CONTEXT_HINT = 999, WINDOW = 1000, IMAGE_OVERLAY = 1001 }
 local DELAY_MS = { CORPSE_TEST = 750, DATABASE_BUILD = 1000 }
 local MAX_GUI_PARENT_DEPTH = 12
 local DEFAULT_AFFLICTION_STRENGTH = 100
@@ -158,15 +208,22 @@ local TALENT_TREE_STAGE_HEIGHT = 0.115
 local TALENT_TILE_WIDTH = 0.30
 local TALENT_PRIMARY_TILE_WIDTH = 0.145
 local COLOR = {
-    TALENT_ROW = Color(46, 46, 46, 255),
-    CYAN = Color(101, 203, 218, 255),
-    CREAM = Color(222, 211, 164, 255),
-    GREEN = Color(130, 205, 151, 255),
-    ORANGE = Color(224, 157, 93, 255),
-    RED = Color(220, 104, 104, 255),
-    MUTED = Color(152, 177, 184, 255),
-    TEXT = Color(206, 213, 190, 255),
-    HEADING = Color(92, 185, 201, 255),
+    BACKDROP = Color(3, 10, 14, 238),
+    WINDOW = Color(10, 22, 27, 252),
+    HEADER = Color(15, 36, 42, 255),
+    PANEL = Color(13, 29, 34, 250),
+    PANEL_ALTERNATE = Color(18, 38, 43, 245),
+    ROW = Color(22, 42, 46, 225),
+    TALENT_ROW = Color(27, 48, 51, 255),
+    CYAN = Color(102, 211, 218, 255),
+    CREAM = Color(232, 222, 184, 255),
+    GOLD = Color(218, 179, 104, 255),
+    GREEN = Color(132, 202, 151, 255),
+    ORANGE = Color(225, 151, 87, 255),
+    RED = Color(218, 101, 96, 255),
+    MUTED = Color(133, 163, 165, 255),
+    TEXT = Color(218, 222, 205, 255),
+    HEADING = Color(232, 203, 135, 255),
 }
 
 -- Collection helpers ---------------------------------------------------------
@@ -252,7 +309,9 @@ local function numberText(value)
     else
         rounded = math.ceil(numeric * NUMBER_PRECISION - 0.5) / NUMBER_PRECISION
     end
-    return string.gsub(string.gsub(string.format("%.3f", rounded), "0+$", ""), "%.$", "")
+    local formatted = string.gsub(string.format("%.3f", rounded), "0+$", "")
+    formatted = string.gsub(formatted, "%.$", "")
+    return formatted
 end
 local function joined(collection, separator)
     local values = {}
@@ -309,6 +368,33 @@ local itemFilterNames = {
     "Ores",
     "Ruins & Alien",
     "Miscellaneous",
+}
+local CATEGORY_PRESENTATION = {
+    Bestiary = {
+        tab = "BESTIARY",
+        title = "FAUNA OF EUROPA",
+        description = "Field observations, habitat records, physiology and recoverable specimens from known Europan life.",
+    },
+    Items = {
+        tab = "ITEMS",
+        title = "EQUIPMENT & MATERIALS",
+        description = "A technical catalogue of equipment, fabrication chains, market data and material recovery.",
+    },
+    Submarines = {
+        tab = "SUBMARINES",
+        title = "SUBMARINE CATALOGUE",
+        description = "Loaded player vessels organized by class, tier, price and recommended crew complement.",
+    },
+    Professions = {
+        tab = "PROFESSIONS",
+        title = "CREW DISCIPLINES",
+        description = "Training records, starting competencies and complete specialization pathways for every crew role.",
+    },
+    Afflictions = {
+        tab = "AFFLICTIONS",
+        title = "MEDICAL REFERENCE",
+        description = "Clinical notes covering symptoms, progressive effects, known treatments and direct causes.",
+    },
 }
 local function hasCategory(value, flag)
     return math.floor((tonumber(value) or 0) / flag) % 2 == 1
@@ -507,8 +593,8 @@ local function indexMonsterEvents(element, biome)
 end
 
 local function buildDatabase()
-    items, creatures, professions, afflictions, reverseCraft, reverseDeconstruct =
-        {}, {}, {}, {}, {}, {}
+    items, creatures, submarines, professions, afflictions = {}, {}, {}, {}, {}
+    reverseCraft, reverseDeconstruct = {}, {}
     itemByIdentifier, creatureByIdentifier, afflictionByIdentifier, professionByIdentifier =
         {}, {}, {}, {}
     recipeTalents, recipeBlueprints, creatureHabitats = {}, {}, {}
@@ -596,6 +682,32 @@ local function buildDatabase()
                     end
                 end
             end
+        end
+    end
+    local seenSubmarines = {}
+    for submarineInfo in SubmarineInfo.SavedSubmarines do
+        local submarineName = text(safeField(submarineInfo, "DisplayName", submarineInfo.Name))
+        local submarineIdentifier = id(safeField(submarineInfo, "Name", submarineName))
+        local isPlayerSubmarine = safeField(submarineInfo, "IsPlayer", false)
+        local submarineType = id(safeField(submarineInfo, "Type", ""))
+        local isBeaconStation = safeField(submarineInfo, "IsBeacon", false)
+            or submarineType == "beaconstation"
+            or E.contains(submarineIdentifier, "beaconstation")
+            or E.contains(submarineName, "beacon station")
+        local isCorrupted = safeField(submarineInfo, "IsFileCorrupted", false)
+        if
+            isPlayerSubmarine
+            and not isBeaconStation
+            and not isCorrupted
+            and submarineName ~= ""
+            and not seenSubmarines[submarineIdentifier]
+        then
+            seenSubmarines[submarineIdentifier] = true
+            append(submarines, {
+                prefab = submarineInfo,
+                identifier = submarineIdentifier,
+                name = submarineName,
+            })
         end
     end
     for talent in TalentPrefab.TalentPrefabs do
@@ -699,6 +811,19 @@ local function buildDatabase()
     table.sort(creatures, function(a, b)
         return a.name < b.name
     end)
+    table.sort(submarines, function(a, b)
+        local tierA = tonumber(safeField(a.prefab, "Tier", 1)) or 1
+        local tierB = tonumber(safeField(b.prefab, "Tier", 1)) or 1
+        if tierA ~= tierB then
+            return tierA < tierB
+        end
+        local priceA = tonumber(safeField(a.prefab, "Price", 0)) or 0
+        local priceB = tonumber(safeField(b.prefab, "Price", 0)) or 0
+        if priceA ~= priceB then
+            return priceA < priceB
+        end
+        return a.name < b.name
+    end)
     table.sort(professions, function(a, b)
         return a.name < b.name
     end)
@@ -767,10 +892,12 @@ local function showImageOverlay(sprite, titleText)
         GUI.RectTransform(UI_VECTOR.OVERLAY_WINDOW, GUIStatic.Canvas, Anchor.Center),
         "GUIFrameListBox"
     )
+    imageOverlay.Color = COLOR.WINDOW
     local inner = GUI.Frame(
         GUI.RectTransform(UI_VECTOR.OVERLAY_INNER, imageOverlay.RectTransform, Anchor.Center),
         "InnerFrame"
     )
+    inner.Color = COLOR.PANEL
     local title = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.OVERLAY_TITLE, inner.RectTransform, Anchor.TopLeft),
         string.upper(titleText),
@@ -806,11 +933,50 @@ local function clear(component)
     end
 end
 
+local function semanticTextColor(value)
+    local content = string.upper(text(value))
+    if string.find(content, "^SOURCE") then
+        return COLOR.MUTED
+    end
+    if string.find(content, "^NO ") or string.find(content, "^NOT ") then
+        return COLOR.MUTED
+    end
+    if string.find(content, "WARNING") or string.find(content, "DAMAGE") then
+        return COLOR.RED
+    end
+    if string.find(content, "^OUTPUT") or string.find(content, "LIVE ADJUSTED") then
+        return COLOR.GREEN
+    end
+    if string.find(content, "^DEVICE") or string.find(content, "^REQUIRES") then
+        return COLOR.GOLD
+    end
+    if
+        string.find(content, "^VITALITY")
+        or string.find(content, "^SPECIES")
+        or string.find(content, "^GROUP")
+    then
+        return COLOR.CYAN
+    end
+    return COLOR.TEXT
+end
+
 local function line(parent, value, style)
     return GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.FULL_WIDTH_AUTO_HEIGHT, parent, Anchor.TopCenter),
         text(value),
-        COLOR.TEXT,
+        semanticTextColor(value),
+        nil,
+        Alignment.TopLeft,
+        true,
+        style or ""
+    )
+end
+
+local function coloredLine(parent, value, color, style)
+    return GUI.TextBlock(
+        GUI.RectTransform(UI_VECTOR.FULL_WIDTH_AUTO_HEIGHT, parent, Anchor.TopCenter),
+        text(value),
+        color,
         nil,
         Alignment.TopLeft,
         true,
@@ -830,16 +996,17 @@ local function label(parent, value, alignment, color)
     )
 end
 
-local function heading(parent, value)
-    return GUI.TextBlock(
+local function heading(parent, value, color)
+    local headingText = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.FULL_WIDTH_AUTO_HEIGHT, parent, Anchor.TopCenter),
         string.upper(text(value)),
-        COLOR.HEADING,
+        color or COLOR.HEADING,
         GUI.Style.SubHeadingFont,
         Alignment.TopLeft,
         true,
         ""
     )
+    return headingText
 end
 
 local palette = {
@@ -854,10 +1021,11 @@ local palette = {
 local function infoRow(parent, key, value, color)
     local row =
         GUI.Frame(GUI.RectTransform(UI_VECTOR.INFO_ROW, parent, Anchor.TopCenter), "ListBoxElement")
+    row.Color = COLOR.ROW
     local keyText = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.INFO_KEY, row.RectTransform, Anchor.CenterLeft),
         string.upper(text(key)),
-        nil,
+        COLOR.GOLD,
         GUI.Style.SmallFont,
         Alignment.CenterLeft,
         false,
@@ -868,7 +1036,7 @@ local function infoRow(parent, key, value, color)
     local valueText = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.INFO_VALUE, row.RectTransform, Anchor.CenterRight),
         text(value),
-        nil,
+        color or COLOR.TEXT,
         GUI.Style.SmallFont,
         Alignment.CenterLeft,
         false,
@@ -883,6 +1051,7 @@ local function iconInfoRow(parent, sprite, caption, value, color, tooltip)
         GUI.RectTransform(UI_VECTOR.ICON_INFO_ROW, parent, Anchor.TopCenter),
         "ListBoxElement"
     )
+    row.Color = COLOR.ROW
     if sprite ~= nil then
         local image = GUI.Image(
             GUI.RectTransform(UI_VECTOR.ICON_INFO_ICON, row.RectTransform, Anchor.CenterLeft),
@@ -895,7 +1064,7 @@ local function iconInfoRow(parent, sprite, caption, value, color, tooltip)
     local block = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.ICON_INFO_TEXT, row.RectTransform, Anchor.CenterRight),
         string.upper(text(caption)) .. "\n" .. text(value),
-        nil,
+        color or COLOR.CREAM,
         GUI.Style.SmallFont,
         Alignment.CenterLeft,
         false,
@@ -940,6 +1109,7 @@ local function requirementRow(parent, captionText, iconSprite, tooltip, onClick)
         GUI.RectTransform(UI_VECTOR.REQUIREMENT_ROW, parent, Anchor.TopCenter),
         "ListBoxElement"
     )
+    row.Color = COLOR.ROW
     local caption
     if onClick ~= nil then
         caption = GUI.Button(
@@ -1043,6 +1213,7 @@ local function itemButton(parent, entry, suffix)
         Alignment.CenterLeft,
         "ListBoxElement"
     )
+    button.Color = COLOR.ROW
     local sprite = entry.prefab.InventoryIcon or entry.prefab.Sprite
     if sprite ~= nil then
         local icon = GUI.Image(
@@ -1057,7 +1228,7 @@ local function itemButton(parent, entry, suffix)
     local caption = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.LINK_TEXT, button.RectTransform, Anchor.CenterRight),
         entry.name .. (suffix or ""),
-        nil,
+        COLOR.CREAM,
         GUI.Style.SmallFont,
         Alignment.CenterLeft,
         false,
@@ -1252,6 +1423,37 @@ local function showItemCapabilities(prefab, parent)
         return
     end
     local protection, stats, skillBonuses, attacks, requirements, equipment = {}, {}, {}, {}, {}, {}
+    local attackIdentities = {}
+    local attackEffects = {}
+    local function addAttack(value)
+        local identity = id(value)
+        if attackIdentities[identity] then
+            return
+        end
+        attackIdentities[identity] = true
+        append(attacks, value)
+    end
+    local function addAttackEffect(identifier, strength, probability)
+        local effectIdentifier = id(identifier)
+        local effect = attackEffects[effectIdentifier]
+        if effect == nil then
+            effect = {
+                name = prettyIdentifier(identifier),
+                components = {},
+                identities = {},
+            }
+            attackEffects[effectIdentifier] = effect
+        end
+        local componentIdentity = numberText(strength) .. ":" .. numberText(probability)
+        if effect.identities[componentIdentity] then
+            return
+        end
+        effect.identities[componentIdentity] = true
+        append(effect.components, {
+            strength = tonumber(strength) or 0,
+            probability = tonumber(probability) or 1,
+        })
+    end
     local function addAffectedEffects(target, identifiers, suffix)
         for identifier in string.gmatch(identifiers or "", "[^,%s]+") do
             target[#target + 1] = prettyIdentifier(identifier) .. suffix
@@ -1346,25 +1548,25 @@ local function showItemCapabilities(prefab, parent)
             local itemDamage = element.GetAttributeFloat("itemdamage", 0)
             local penetration = element.GetAttributeFloat("penetration", 0)
             if structureDamage > 0 then
-                attacks[#attacks + 1] = "Structure damage  " .. text(structureDamage)
+                addAttack("Structure damage  " .. text(structureDamage))
             end
             if itemDamage > 0 then
-                attacks[#attacks + 1] = "Item damage  " .. text(itemDamage)
+                addAttack("Item damage  " .. text(itemDamage))
             end
             if penetration > 0 then
-                attacks[#attacks + 1] = "Penetration  "
-                    .. text(math.floor(penetration * PERCENT_SCALE + 0.5))
-                    .. "%"
+                addAttack(
+                    "Penetration  " .. text(math.floor(penetration * PERCENT_SCALE + 0.5)) .. "%"
+                )
             end
         elseif name == "affliction" and context == "attack" then
             local strength =
                 element.GetAttributeFloat("strength", element.GetAttributeFloat("amount", 0))
             local probability = element.GetAttributeFloat("probability", 1)
-            attacks[#attacks + 1] = prettyIdentifier(
-                element.GetAttributeString("identifier", "damage")
-            ) .. "  " .. text(strength) .. (probability < 1 and "  (" .. text(
-                math.floor(probability * 100)
-            ) .. "% chance)" or "")
+            addAttackEffect(
+                element.GetAttributeString("identifier", "damage"),
+                strength,
+                probability
+            )
         elseif name == "requireditem" and context ~= nil then
             local identifier = element.GetAttributeIdentifier("identifier", "")
             local target = findItemPrefab(identifier)
@@ -1376,6 +1578,46 @@ local function showItemCapabilities(prefab, parent)
         end
     end
     walk(root, nil)
+    local sortedEffectIdentifiers = {}
+    for effectIdentifier in pairs(attackEffects) do
+        append(sortedEffectIdentifiers, effectIdentifier)
+    end
+    table.sort(sortedEffectIdentifiers)
+    for _, effectIdentifier in ipairs(sortedEffectIdentifiers) do
+        local effect = attackEffects[effectIdentifier]
+        local totalStrength = 0
+        local allGuaranteed = true
+        local componentDescriptions = {}
+        for _, component in ipairs(effect.components) do
+            totalStrength = totalStrength + component.strength
+            if component.probability < 1 then
+                allGuaranteed = false
+            end
+            append(
+                componentDescriptions,
+                numberText(component.strength)
+                    .. (
+                        component.probability < 1
+                            and " at " .. numberText(
+                                math.floor(component.probability * PERCENT_SCALE + 0.5)
+                            ) .. "%"
+                        or ""
+                    )
+            )
+        end
+        if #effect.components > 1 and allGuaranteed then
+            addAttack(
+                effect.name
+                    .. "  "
+                    .. numberText(totalStrength)
+                    .. " total  ("
+                    .. numberText(#effect.components)
+                    .. " components)"
+            )
+        else
+            addAttack(effect.name .. "  " .. table.concat(componentDescriptions, " + "))
+        end
+    end
     if #equipment > 0 then
         heading(parent, "\nEquipment")
         for _, value in ipairs(equipment) do
@@ -1383,21 +1625,21 @@ local function showItemCapabilities(prefab, parent)
         end
     end
     if #protection > 0 or #stats > 0 or #skillBonuses > 0 then
-        heading(parent, "\nProtection and passive effects")
+        heading(parent, "\nProtection and passive effects", COLOR.TEXT)
         for _, value in ipairs(protection) do
-            line(parent, value)
+            coloredLine(parent, value, COLOR.TEXT)
         end
         for _, value in ipairs(stats) do
-            line(parent, value)
+            coloredLine(parent, value, COLOR.TEXT)
         end
         for _, value in ipairs(skillBonuses) do
-            line(parent, value)
+            coloredLine(parent, value, COLOR.TEXT)
         end
     end
     if #attacks > 0 then
-        heading(parent, "\nDamage")
+        heading(parent, "\nDamage", COLOR.TEXT)
         for _, value in ipairs(attacks) do
-            line(parent, value)
+            coloredLine(parent, value, COLOR.TEXT)
         end
     end
     if #requirements > 0 then
@@ -1502,6 +1744,7 @@ showItem = function(entry)
         GUI.RectTransform(UI_VECTOR.ITEM_HERO, detailList.Content.RectTransform, Anchor.TopCenter),
         "InnerFrame"
     )
+    hero.Color = COLOR.PANEL_ALTERNATE
     local sprite = p.InventoryIcon or p.Sprite
     if sprite ~= nil then
         local image = GUI.Image(
@@ -1516,7 +1759,7 @@ showItem = function(entry)
     local title = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.ITEM_HERO_TITLE, hero.RectTransform, Anchor.TopRight),
         string.upper(entry.name),
-        palette.cyan,
+        COLOR.CREAM,
         GUI.Style.SubHeadingFont,
         Alignment.CenterLeft,
         false,
@@ -1766,6 +2009,7 @@ local function showCreature(entry)
             ),
             "InnerFrame"
         )
+        previewFrame.Color = COLOR.PANEL_ALTERNATE
         local previewButton = GUI.Button(
             GUI.RectTransform(UI_VECTOR.FULL, previewFrame.RectTransform, Anchor.Center),
             "",
@@ -1873,6 +2117,222 @@ local function findTalent(identifier)
     return nil
 end
 
+local function submarineTierColor(tier)
+    if tier == 3 then
+        return COLOR.GOLD
+    end
+    if tier == 2 then
+        return COLOR.CYAN
+    end
+    return COLOR.CREAM
+end
+
+local SUBMARINE_WEAPON_NAMES = {
+    coilgun = "Coilgun",
+    doublecoilgun = "Double Coilgun",
+    chaingun = "Chaingun",
+    flakcannon = "Flak Cannon",
+    pulselaser = "Pulse Laser",
+    railgun = "Railgun",
+}
+
+local function loadedSubmarineWeapons(info)
+    local counts = {}
+    local root = safeField(info, "SubmarineElement", nil)
+    local function walk(element)
+        if element == nil then
+            return
+        end
+        if id(element.NameAsIdentifier()) == "item" then
+            local identifier = id(element.GetAttributeIdentifier("identifier", ""))
+            local weaponName = SUBMARINE_WEAPON_NAMES[identifier]
+            if weaponName ~= nil then
+                counts[weaponName] = (counts[weaponName] or 0) + 1
+            end
+        end
+        for child in element.Elements() do
+            walk(child)
+        end
+    end
+    walk(root)
+
+    local weapons = {}
+    local gunCount = 0
+    for weaponName, count in pairs(counts) do
+        append(weapons, numberText(count) .. " " .. weaponName .. (count == 1 and "" or "s"))
+        gunCount = gunCount + count
+    end
+    table.sort(weapons)
+    return weapons, gunCount
+end
+
+local function wikiWeaponCount(weapons)
+    local total = 0
+    for _, weapon in ipairs(weapons or {}) do
+        total = total + (tonumber(string.match(weapon, "^(%d+)")) or 0)
+    end
+    return total
+end
+
+local function showSubmarine(entry)
+    clear(detailList)
+    local info = entry.prefab
+    heading(detailList.Content.RectTransform, entry.name)
+
+    local preview = safeField(info, "PreviewImage", nil)
+    if preview ~= nil then
+        local previewFrame = GUI.Frame(
+            GUI.RectTransform(
+                UI_VECTOR.CREATURE_PREVIEW,
+                detailList.Content.RectTransform,
+                Anchor.TopCenter
+            ),
+            "InnerFrame"
+        )
+        previewFrame.Color = COLOR.PANEL_ALTERNATE
+        local previewButton = GUI.Button(
+            GUI.RectTransform(UI_VECTOR.FULL, previewFrame.RectTransform, Anchor.Center),
+            "",
+            Alignment.Center,
+            "ListBoxElement"
+        )
+        local previewImage = GUI.Image(
+            GUI.RectTransform(
+                UI_VECTOR.CREATURE_PREVIEW_IMAGE,
+                previewButton.RectTransform,
+                Anchor.Center
+            ),
+            preview,
+            true
+        )
+        previewImage.CanBeFocused = false
+        previewButton.ToolTip = "Open submarine preview"
+        previewButton.OnClicked = function()
+            showImageOverlay(preview, entry.name)
+            return true
+        end
+    end
+
+    local description = cleanDisplayText(safeField(info, "Description", ""))
+    line(
+        detailList.Content.RectTransform,
+        description ~= "" and description or "No description is supplied by this submarine file."
+    )
+
+    infoRow(
+        detailList.Content.RectTransform,
+        "Class",
+        prettyIdentifier(safeField(info, "SubmarineClass", "Unknown")),
+        COLOR.CYAN
+    )
+    local tier = tonumber(safeField(info, "Tier", 1)) or 1
+    infoRow(
+        detailList.Content.RectTransform,
+        "Tier",
+        "Tier " .. numberText(tier),
+        submarineTierColor(tier)
+    )
+    infoRow(
+        detailList.Content.RectTransform,
+        "Price",
+        numberText(safeField(info, "Price", 0)) .. " mk",
+        COLOR.GREEN
+    )
+
+    local minimumCrew = numberText(safeField(info, "RecommendedCrewSizeMin", 1))
+    local maximumCrew = numberText(safeField(info, "RecommendedCrewSizeMax", 1))
+    infoRow(
+        detailList.Content.RectTransform,
+        "Recommended crew",
+        minimumCrew .. "–" .. maximumCrew,
+        COLOR.CREAM
+    )
+    infoRow(
+        detailList.Content.RectTransform,
+        "Crew experience",
+        prettyIdentifier(safeField(info, "RecommendedCrewExperience", "Unknown"))
+    )
+    infoRow(
+        detailList.Content.RectTransform,
+        "Cargo capacity",
+        numberText(safeField(info, "CargoCapacity", 0))
+    )
+
+    local dimensions = safeField(info, "Dimensions", nil)
+    if dimensions ~= nil then
+        local width = numberText(safeField(dimensions, "X", safeField(dimensions, "Width", 0)))
+        local height = numberText(safeField(dimensions, "Y", safeField(dimensions, "Height", 0)))
+        infoRow(detailList.Content.RectTransform, "Dimensions", width .. " × " .. height)
+    end
+
+    local wiki = submarineWikiData[id(safeField(info, "Name", entry.identifier))]
+    if wiki ~= nil then
+        infoRow(
+            detailList.Content.RectTransform,
+            "Horizontal speed",
+            numberText(wiki.horizontalSpeed) .. " km/h at 50 Helm",
+            COLOR.CYAN
+        )
+        infoRow(
+            detailList.Content.RectTransform,
+            "Descent speed",
+            numberText(wiki.descentSpeed) .. " km/h",
+            COLOR.CYAN
+        )
+    else
+        infoRow(
+            detailList.Content.RectTransform,
+            "Speed",
+            "Not published for this custom submarine",
+            COLOR.MUTED
+        )
+    end
+
+    local weapons, gunCount = loadedSubmarineWeapons(info)
+    if isEmpty(weapons) and wiki ~= nil then
+        weapons = wiki.weapons or {}
+        gunCount = wikiWeaponCount(weapons)
+    end
+    heading(detailList.Content.RectTransform, "\nStarting armament")
+    infoRow(detailList.Content.RectTransform, "Installed guns", numberText(gunCount), COLOR.RED)
+    if hasEntries(weapons) then
+        for _, weapon in ipairs(weapons) do
+            coloredLine(detailList.Content.RectTransform, "•  " .. weapon, COLOR.CREAM)
+        end
+    else
+        coloredLine(detailList.Content.RectTransform, "No installed guns detected.", COLOR.MUTED)
+    end
+    if wiki ~= nil then
+        if (wiki.hardpoints or 0) > 0 then
+            coloredLine(
+                detailList.Content.RectTransform,
+                "•  " .. numberText(wiki.hardpoints) .. " open turret hardpoint(s)",
+                COLOR.GOLD
+            )
+        end
+        if (wiki.largeHardpoints or 0) > 0 then
+            coloredLine(
+                detailList.Content.RectTransform,
+                "•  " .. numberText(wiki.largeHardpoints) .. " open large hardpoint(s)",
+                COLOR.GOLD
+            )
+        end
+        for _, feature in ipairs(wiki.other or {}) do
+            coloredLine(detailList.Content.RectTransform, "•  " .. feature, COLOR.TEXT)
+        end
+    end
+
+    heading(detailList.Content.RectTransform, "\nOperational notes")
+    line(
+        detailList.Content.RectTransform,
+        "Scout vessels favor mobility and exploration, Attack vessels emphasize weapon coverage, and Transport vessels trade agility for cargo and crew capacity. Inspect the vessel before departure: weapon hardpoints, fabrication facilities and emergency equipment vary by design."
+    )
+    line(
+        detailList.Content.RectTransform,
+        "\nSOURCE  Loaded submarine file  •  General guidance: Official Barotrauma Wiki"
+    )
+end
+
 local function afflictionIcon(prefab)
     local icon = safeField(prefab, "Icon", nil)
     if icon ~= nil then
@@ -1947,6 +2407,7 @@ local function showProfession(entry, focusSkill)
         ),
         "InnerFrame"
     )
+    header.Color = COLOR.PANEL_ALTERNATE
     local jobIcon = safeField(p, "Icon", safeField(p, "IconSmall", nil))
     if jobIcon ~= nil then
         local image = GUI.Image(
@@ -1960,7 +2421,7 @@ local function showProfession(entry, focusSkill)
     local title = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.PROFESSION_TITLE, header.RectTransform, Anchor.TopRight),
         string.upper(entry.name),
-        palette.cyan,
+        COLOR.CREAM,
         GUI.Style.SubHeadingFont,
         Alignment.CenterLeft,
         false,
@@ -1978,6 +2439,24 @@ local function showProfession(entry, focusSkill)
         ""
     )
     summary.CanBeFocused = false
+    local guide = roleGuides[entry.identifier]
+    if guide ~= nil then
+        heading(detailList.Content.RectTransform, "\nField guide")
+        coloredLine(detailList.Content.RectTransform, "CORE RESPONSIBILITIES", COLOR.GOLD)
+        for _, responsibility in ipairs(guide.responsibilities or {}) do
+            coloredLine(detailList.Content.RectTransform, "•  " .. responsibility, COLOR.CREAM)
+        end
+        coloredLine(detailList.Content.RectTransform, "\nPRACTICAL TIPS", COLOR.CYAN)
+        for _, tip in ipairs(guide.tips or {}) do
+            coloredLine(detailList.Content.RectTransform, "◆  " .. tip, COLOR.TEXT)
+        end
+        local sourceLine = coloredLine(
+            detailList.Content.RectTransform,
+            "\nSOURCE  Official Barotrauma Wiki  •  Advice summarized for in-game use",
+            COLOR.MUTED
+        )
+        sourceLine.ToolTip = guide.source or "Official Barotrauma Wiki"
+    end
     heading(detailList.Content.RectTransform, "\nStarting skills")
     local skillsXml = string.match(entry.jobXml or "", "<[Ss]kills[^>]*>(.-)</[Ss]kills>") or ""
     local skillCount = 0
@@ -2227,6 +2706,7 @@ local function afflictionButton(parent, entry, suffix)
         Alignment.CenterLeft,
         "ListBoxElement"
     )
+    button.Color = COLOR.ROW
     local sprite = afflictionIcon(entry.prefab)
     if sprite ~= nil then
         local icon = GUI.Image(
@@ -2239,7 +2719,7 @@ local function afflictionButton(parent, entry, suffix)
     local caption = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.LINK_TEXT, button.RectTransform, Anchor.CenterRight),
         entry.name .. (suffix or ""),
-        nil,
+        COLOR.CREAM,
         GUI.Style.SmallFont,
         Alignment.CenterLeft,
         false,
@@ -2366,17 +2846,68 @@ showAffliction = function(entry)
     end
 end
 
+local function updateHistoryButtons()
+    if backButton ~= nil then
+        backButton.Enabled = navigationPosition > 1
+    end
+    if forwardButton ~= nil then
+        forwardButton.Enabled = navigationPosition < #navigationHistory
+    end
+end
+
+local function recordNavigation(category, entry, focus)
+    if isRestoringHistory then
+        return
+    end
+    while #navigationHistory > navigationPosition do
+        table.remove(navigationHistory)
+    end
+    append(navigationHistory, {
+        category = category,
+        entry = entry,
+        focus = focus,
+        search = currentSearch,
+        itemFilter = itemCategoryFilter,
+    })
+    navigationPosition = #navigationHistory
+    updateHistoryButtons()
+end
+
+local function restoreNavigation(position)
+    local state = navigationHistory[position]
+    if state == nil then
+        return
+    end
+    navigationPosition = position
+    currentSearch = state.search or ""
+    itemCategoryFilter = state.itemFilter or "All"
+    if searchBox ~= nil then
+        searchBox.Text = currentSearch
+    end
+    if itemFilterLabel ~= nil then
+        itemFilterLabel.Text = string.upper(itemCategoryFilter)
+    end
+    isRestoringHistory = true
+    if state.entry ~= nil then
+        navigateTo(state.category, state.entry, state.focus)
+    else
+        selectCategory(state.category)
+    end
+    isRestoringHistory = false
+    updateHistoryButtons()
+end
+
 navigateTo = function(category, entry, focus)
     if entry == nil then
         return
     end
+    recordNavigation(category, entry, focus)
     currentCategory = category
-    currentSearch = ""
-    if searchBox ~= nil then
-        searchBox.Text = ""
-    end
     if itemFilterControls ~= nil then
         itemFilterControls.Visible = category == "Items"
+    end
+    if detailHeaderLabel ~= nil then
+        detailHeaderLabel.Text = string.upper(category) .. "  /  " .. string.upper(entry.name)
     end
     populateList()
     for tabCategory, button in pairs(tabButtons) do
@@ -2386,6 +2917,8 @@ navigateTo = function(category, entry, focus)
         showCreature(entry)
     elseif category == "Items" then
         showItem(entry)
+    elseif category == "Submarines" then
+        showSubmarine(entry)
     elseif category == "Professions" then
         showProfession(entry, focus)
     else
@@ -2407,6 +2940,8 @@ populateList = function(forceSearch)
     local source = items
     if currentCategory == "Bestiary" then
         source = creatures
+    elseif currentCategory == "Submarines" then
+        source = submarines
     elseif currentCategory == "Professions" then
         source = professions
     elseif currentCategory == "Afflictions" then
@@ -2418,6 +2953,8 @@ populateList = function(forceSearch)
         if currentCategory == "Items" then
             tags = joined(entry.prefab.Tags)
             category = categoryText(entry.prefab.Category)
+        elseif currentCategory == "Submarines" then
+            category = prettyIdentifier(safeField(entry.prefab, "SubmarineClass", ""))
         elseif currentCategory == "Afflictions" then
             category =
                 text(safeField(entry.prefab, "AfflictionType", safeField(entry.prefab, "Type", "")))
@@ -2436,14 +2973,32 @@ populateList = function(forceSearch)
         then
             shown = shown + 1
             if shown <= limit then
-                local label = entry.name
+                local entryLabel = entry.name
                 local button = GUI.Button(
                     GUI.RectTransform(UI_VECTOR.INDEX_ROW, listBox.Content.RectTransform),
                     "",
                     Alignment.CenterLeft,
                     "ListBoxElement"
                 )
-                if currentCategory ~= "Bestiary" then
+                button.Color = COLOR.ROW
+                if currentCategory == "Submarines" then
+                    local tier = tonumber(safeField(entry.prefab, "Tier", 1)) or 1
+                    local tierFrame = GUI.Frame(
+                        GUI.RectTransform(
+                            UI_VECTOR.INDEX_ICON,
+                            button.RectTransform,
+                            Anchor.CenterLeft
+                        ),
+                        "InnerFrame"
+                    )
+                    tierFrame.Color = COLOR.PANEL_ALTERNATE
+                    label(
+                        tierFrame.RectTransform,
+                        "TIER\n" .. numberText(tier),
+                        Alignment.Center,
+                        submarineTierColor(tier)
+                    )
+                elseif currentCategory ~= "Bestiary" then
                     local sprite = nil
                     if currentCategory == "Items" then
                         sprite = entry.prefab.InventoryIcon or entry.prefab.Sprite
@@ -2481,8 +3036,8 @@ populateList = function(forceSearch)
                         button.RectTransform,
                         Anchor.CenterRight
                     ),
-                    label,
-                    nil,
+                    entryLabel,
+                    COLOR.CREAM,
                     GUI.Style.SmallFont,
                     Alignment.CenterLeft,
                     false,
@@ -2504,12 +3059,15 @@ populateList = function(forceSearch)
     end
 end
 
-local function selectCategory(name)
+selectCategory = function(name)
     currentCategory = name
-    currentSearch = ""
-    if searchBox then
-        searchBox.Text = ""
+    if not isRestoringHistory then
+        currentSearch = ""
+        if searchBox then
+            searchBox.Text = ""
+        end
     end
+    recordNavigation(name, nil, nil)
     populateList()
     clear(detailList)
     if itemFilterControls ~= nil then
@@ -2518,30 +3076,24 @@ local function selectCategory(name)
     for category, button in pairs(tabButtons) do
         button.Selected = category == name
     end
-    heading(detailList.Content.RectTransform, name)
-    if name == "Items" then
-        line(
-            detailList.Content.RectTransform,
-            "Select an item to view crafting, used-to-craft, deconstruction outputs, and material sources on one page."
-        )
-    elseif name == "Professions" then
-        line(
-            detailList.Content.RectTransform,
-            "Select a profession to inspect its starting skills and read-only talent tree."
-        )
-    elseif name == "Afflictions" then
-        line(
-            detailList.Content.RectTransform,
-            "Select an affliction to inspect effects, stat changes, treatments and causes."
-        )
+    local presentation = CATEGORY_PRESENTATION[name]
+    if detailHeaderLabel ~= nil then
+        detailHeaderLabel.Text = "COLLECTION OVERVIEW  /  " .. string.upper(name)
     end
+    heading(detailList.Content.RectTransform, presentation.title)
+    line(detailList.Content.RectTransform, presentation.description)
+    line(detailList.Content.RectTransform, "\nSelect a record from the index to begin.")
 end
 
 local function createWindow()
     local canvas = GUIStatic.Canvas
     local windowSize = UI_VECTOR.WINDOW
-    local windowRect = GUI.RectTransform(windowSize, canvas, Anchor.Center)
+    backdrop = GUI.Frame(GUI.RectTransform(UI_VECTOR.FULL, canvas, Anchor.Center), "GUIFrame")
+    backdrop.Color = COLOR.BACKDROP
+
+    local windowRect = GUI.RectTransform(windowSize, backdrop.RectTransform, Anchor.Center)
     window = GUI.Frame(windowRect, "GUIFrameListBox")
+    window.Color = COLOR.WINDOW
     local padded = GUI.Frame(
         GUI.RectTransform(UI_VECTOR.WINDOW_PADDING, window.RectTransform, Anchor.Center),
         nil
@@ -2551,6 +3103,13 @@ local function createWindow()
         GUI.RectTransform(UI_VECTOR.HEADER, padded.RectTransform, Anchor.TopCenter),
         "InnerFrame"
     )
+    header.Color = COLOR.HEADER
+    local headerAccent = GUI.Frame(
+        GUI.RectTransform(UI_VECTOR.HEADER_ACCENT, header.RectTransform, Anchor.CenterLeft),
+        "InnerFrame"
+    )
+    headerAccent.Color = COLOR.GOLD
+    headerAccent.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_HEADER_ACCENT
     local titleArea = GUI.Frame(
         GUI.RectTransform(UI_VECTOR.HEADER_TITLE_AREA, header.RectTransform, Anchor.TopLeft),
         nil
@@ -2558,25 +3117,50 @@ local function createWindow()
     local title = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.HEADER_TITLE, titleArea.RectTransform, Anchor.CenterLeft),
         "EUROPA ENCYCLOPEDIA",
-        COLOR.CYAN,
+        COLOR.CREAM,
         GUI.Style.SubHeadingFont,
         Alignment.CenterLeft,
         false,
         ""
     )
     title.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_TITLE
+    title.CanBeFocused = false
 
     local headerControls = GUI.LayoutGroup(
         GUI.RectTransform(UI_VECTOR.HEADER_CONTROLS, header.RectTransform, Anchor.TopRight),
         true,
         Anchor.CenterRight
     )
+    backButton = GUI.Button(
+        GUI.RectTransform(UI_VECTOR.HISTORY_BUTTON, headerControls.RectTransform),
+        "‹ BACK",
+        Alignment.Center,
+        "GUIButtonSmall"
+    )
+    backButton.ToolTip = "Return to the previous encyclopedia page"
+    backButton.OnClicked = function()
+        restoreNavigation(navigationPosition - 1)
+        return true
+    end
+    forwardButton = GUI.Button(
+        GUI.RectTransform(UI_VECTOR.HISTORY_BUTTON, headerControls.RectTransform),
+        "NEXT ›",
+        Alignment.Center,
+        "GUIButtonSmall"
+    )
+    forwardButton.ToolTip = "Return to the next encyclopedia page"
+    forwardButton.OnClicked = function()
+        restoreNavigation(navigationPosition + 1)
+        return true
+    end
+    updateHistoryButtons()
     local searchArea =
         GUI.Frame(GUI.RectTransform(UI_VECTOR.SEARCH_AREA, headerControls.RectTransform), nil)
     searchBox = GUI.TextBox(
         GUI.RectTransform(UI_VECTOR.SEARCH_BOX, searchArea.RectTransform, Anchor.Center),
-        ""
+        currentSearch
     )
+    searchBox.ToolTip = "Search by name, identifier, category or tag"
     searchBox.OnTextChangedDelegate = function(_, newText)
         currentSearch = text(newText)
         populateList()
@@ -2600,18 +3184,18 @@ local function createWindow()
     )
     tabs.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_TABS
     tabButtons = {}
-    for _, category in ipairs({ "Bestiary", "Items", "Professions", "Afflictions" }) do
-        local b = GUI.Button(
+    for _, category in ipairs({ "Bestiary", "Items", "Submarines", "Professions", "Afflictions" }) do
+        local button = GUI.Button(
             GUI.RectTransform(UI_VECTOR.TAB_BUTTON, tabs.RectTransform),
-            string.upper(category),
+            CATEGORY_PRESENTATION[category].tab,
             Alignment.Center,
             "GUIButtonSmall"
         )
-        b.OnClicked = function()
+        button.OnClicked = function()
             selectCategory(category)
             return true
         end
-        tabButtons[category] = b
+        tabButtons[category] = button
     end
     local body =
         GUI.Frame(GUI.RectTransform(UI_VECTOR.BODY, padded.RectTransform, Anchor.BottomCenter), nil)
@@ -2619,10 +3203,12 @@ local function createWindow()
         GUI.RectTransform(UI_VECTOR.INDEX_PANEL, body.RectTransform, Anchor.BottomLeft),
         "InnerFrame"
     )
+    left.Color = COLOR.PANEL_ALTERNATE
     local right = GUI.Frame(
         GUI.RectTransform(UI_VECTOR.DETAIL_PANEL, body.RectTransform, Anchor.BottomRight),
         "InnerFrame"
     )
+    right.Color = COLOR.PANEL
     local listHeader = GUI.Frame(
         GUI.RectTransform(UI_VECTOR.PANEL_HEADER, left.RectTransform, Anchor.TopCenter),
         nil
@@ -2631,7 +3217,7 @@ local function createWindow()
         GUI.RectTransform(UI_VECTOR.LIST_HEADER_TITLE, listHeader.RectTransform, Anchor.CenterLeft),
         nil
     )
-    label(listHeaderTitle.RectTransform, "INDEX", Alignment.CenterLeft, COLOR.CYAN)
+    label(listHeaderTitle.RectTransform, "RECORD INDEX", Alignment.CenterLeft, COLOR.GOLD)
     itemFilterControls = GUI.LayoutGroup(
         GUI.RectTransform(UI_VECTOR.FILTER_CONTROLS, listHeader.RectTransform, Anchor.CenterRight),
         true,
@@ -2689,7 +3275,8 @@ local function createWindow()
         ),
         nil
     )
-    label(detailHeaderTitle.RectTransform, "ARCHIVE RECORD", Alignment.CenterLeft, COLOR.CYAN)
+    detailHeaderLabel =
+        label(detailHeaderTitle.RectTransform, "SELECTED ENTRY", Alignment.CenterLeft, COLOR.GOLD)
     listBox = GUI.ListBox(
         GUI.RectTransform(UI_VECTOR.PANEL_LIST, left.RectTransform, Anchor.BottomCenter)
     )
@@ -2703,6 +3290,9 @@ toggle = function()
     visible = not visible
     if visible and window == nil then
         createWindow()
+    end
+    if backdrop ~= nil then
+        backdrop.Visible = visible
     end
     if window ~= nil then
         window.Visible = visible
@@ -2802,6 +3392,7 @@ local function openFocusedEntry()
     if window == nil then
         createWindow()
     end
+    backdrop.Visible = true
     window.Visible = true
     navigateTo(category, entry)
     print(
@@ -2815,18 +3406,28 @@ end
 
 local function updateContextHint()
     local category, entry = getFocusedEntry()
-    if visible or entry == nil then
+    if visible or Game.GameSession == nil then
         if contextHint ~= nil then
             contextHint.Visible = false
         end
         return
     end
     if contextHint == nil then
-        contextHint = GUI.Frame(
+        contextHint = GUI.Button(
             GUI.RectTransform(UI_VECTOR.CONTEXT_HINT, GUIStatic.Canvas, Anchor.BottomCenter),
-            "InnerFrame"
+            "",
+            Alignment.Center,
+            "GUIButtonSmall"
         )
+        contextHint.Color = COLOR.HEADER
         contextHint.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_CONTEXT_HINT
+        contextHint.ToolTip = "Open the Europa Encyclopedia"
+        contextHint.OnClicked = function()
+            if not openFocusedEntry() then
+                toggle()
+            end
+            return true
+        end
         contextHintText = GUI.TextBlock(
             GUI.RectTransform(UI_VECTOR.CONTEXT_HINT_TEXT, contextHint.RectTransform, Anchor.Center),
             "",
@@ -2838,12 +3439,13 @@ local function updateContextHint()
         )
         contextHintText.CanBeFocused = false
     end
-    contextHintText.Text = "["
-        .. text(settings.openKey)
-        .. "]  OPEN "
-        .. string.upper(category)
-        .. ":  "
-        .. entry.name
+    if entry ~= nil then
+        contextHintText.Text = "[" .. openKeyName .. "]  INSPECT  " .. string.upper(entry.name)
+        contextHint.ToolTip = "Open the " .. entry.name .. " encyclopedia record"
+    else
+        contextHintText.Text = "[" .. openKeyName .. "]  ENCYCLOPEDIA"
+        contextHint.ToolTip = "Open the Europa Encyclopedia"
+    end
     contextHint.Visible = true
     contextHint.AddToGUIUpdateList(false, GUI_ORDER.CONTEXT_HINT)
 end
@@ -2860,8 +3462,8 @@ Hook.Add("think", "EuropaEncyclopedia.Input", function()
     if visible and PlayerInput.KeyHit(Keys.Escape) then
         toggle()
     end
-    if visible and window ~= nil then
-        window.AddToGUIUpdateList(false, GUI_ORDER.WINDOW)
+    if visible and backdrop ~= nil then
+        backdrop.AddToGUIUpdateList(false, GUI_ORDER.WINDOW)
     end
     if imageOverlay ~= nil then
         imageOverlay.AddToGUIUpdateList(false, GUI_ORDER.IMAGE_OVERLAY)
@@ -2900,6 +3502,9 @@ Game.AddCommand(
 )
 
 Hook.Add("stop", "EuropaEncyclopedia.Stop", function()
+    if backdrop ~= nil then
+        backdrop.Visible = false
+    end
     if window ~= nil then
         window.Visible = false
     end
