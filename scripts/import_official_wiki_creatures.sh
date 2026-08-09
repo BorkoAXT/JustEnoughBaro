@@ -39,7 +39,7 @@ for record in "${creatures[@]}"; do
   html="$work_dir/$identifier.html"
   if ! curl -L --fail --silent --show-error \
     "https://barotraumagame.com/baro-wiki/api.php?action=parse&page=$encoded_title&prop=text&format=json" -o "$json"; then
-    printf '  ["%s"] = { title = [=[%s]=], description = [=[]=], image = [=[]=], url = [=[https://barotraumagame.com/wiki/%s]=] },\n' \
+    printf '    ["%s"] = {\n        title = [=[%s]=],\n        description = [=[]=],\n        image = [=[]=],\n        url = [=[https://barotraumagame.com/wiki/%s]=],\n    },\n' \
       "$identifier" "$title" "${encoded_title//%20/_}" >> "$data_temp"
     continue
   fi
@@ -54,7 +54,7 @@ for record in "${creatures[@]}"; do
     fi
   fi
   description="${description//]=]/] = ]}"
-  printf '  ["%s"] = { title = [=[%s]=], description = [=[%s]=], image = [=[%s]=], url = [=[https://barotraumagame.com/wiki/%s]=] },\n' \
+  printf '    ["%s"] = {\n        title = [=[%s]=],\n        description = [=[%s]=],\n        image = [=[%s]=],\n        url = [=[https://barotraumagame.com/wiki/%s]=],\n    },\n' \
     "$identifier" "$title" "$description" "$image_path" "${encoded_title//%20/_}" >> "$data_temp"
 done
 printf '}\n' >> "$data_temp"

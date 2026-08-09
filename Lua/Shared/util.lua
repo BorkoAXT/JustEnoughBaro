@@ -5,8 +5,11 @@ local PACKAGE_NAME = "Europa Encyclopedia"
 
 local function resolveModDirectory()
     for package in ContentPackageManager.EnabledPackages.All do
-        if tostring(package.Name) == PACKAGE_NAME then return tostring(package.Dir) end
+        if tostring(package.Name) == PACKAGE_NAME then
+            return tostring(package.Dir)
+        end
     end
+
     error(PACKAGE_NAME .. " is not present in the enabled content packages")
 end
 
@@ -17,7 +20,10 @@ function E.path(relativePath)
 end
 
 function E.str(value)
-    if value == nil then return "" end
+    if value == nil then
+        return ""
+    end
+
     return tostring(value)
 end
 
@@ -27,8 +33,14 @@ end
 
 function E.each(collection)
     local result = {}
-    if collection == nil then return result end
-    for value in collection do result[#result + 1] = value end
+    if collection == nil then
+        return result
+    end
+
+    for value in collection do
+        table.insert(result, value)
+    end
+
     return result
 end
 

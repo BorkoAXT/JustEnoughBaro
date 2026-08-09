@@ -38,6 +38,12 @@ LuaCs documentation and installer: https://github.com/evilfactory/LuaCsForBarotr
 
 Edit `config.lua` before launch. `openKey` accepts an XNA `Keys` enum name. `pageSize` limits instantiated search rows; refining the search reveals the rest.
 
+## Code style
+
+Lua files use the repository's `stylua.toml` rules. Keep one operation per line,
+give domain values descriptive constant names, and place callback bodies on their
+own lines. Run `stylua config.lua Lua` before committing Lua changes.
+
 ## Known data limitations
 
 The encyclopedia only renders fields reliably exposed by loaded prefabs. Creature XML varies substantially, so it does not fabricate armor, spawn, loot, or attack summaries where the runtime prefab does not expose a stable value. The data/index layer is structured so these panels can be added independently.

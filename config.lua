@@ -1,1 +1,4 @@
-return { openKey = "J", pageSize = 80 }
+return {
+    openKey = "J",
+    pageSize = 80,
+}
