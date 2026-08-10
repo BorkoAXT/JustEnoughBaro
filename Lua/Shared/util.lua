@@ -1,16 +1,61 @@
 JustEnoughBaro = JustEnoughBaro or {}
 local E = JustEnoughBaro
 
-local PACKAGE_NAME = "Just Enough Baro"
+local PACKAGE_NAME = "Just Enough Baro (JEB)"
 
-local function resolveModDirectory()
-    for package in ContentPackageManager.EnabledPackages.All do
-        if tostring(package.Name) == PACKAGE_NAME then
-            return tostring(package.Dir)
-        end
+local function directoryFromScript()
+    local ok, info = pcall(function()
+        return debug and debug.getinfo and debug.getinfo(1, "S")
+    end)
+    if not ok or info == nil or info.source == nil then
+        return nil
     end
 
-    error(PACKAGE_NAME .. " is not present in the enabled content packages")
+    local source = tostring(info.source):gsub("^@", "")
+    local directory = source:match("^(.*)[/\\]Lua[/\\]Shared[/\\][^/\\]+$")
+    if directory ~= nil then
+        return directory
+    end
+    if source:match("^Lua[/\\]Shared[/\\][^/\\]+$") then
+        return "."
+    end
+    return nil
+end
+
+local function directoryFromPackages(collection)
+    if collection == nil then
+        return nil
+    end
+
+    local ok, directory = pcall(function()
+        for package in collection do
+            if string.lower(tostring(package.Name)) == string.lower(PACKAGE_NAME) then
+                return tostring(package.Dir)
+            end
+        end
+    end)
+    if ok then
+        return directory
+    end
+    return nil
+end
+
+local function resolveModDirectory()
+    local scriptDirectory = directoryFromScript()
+    if scriptDirectory ~= nil and scriptDirectory ~= "" then
+        return scriptDirectory
+    end
+
+    -- The collection's shape differs between Barotrauma/LuaCs versions.
+    local manager = ContentPackageManager
+    local enabled = manager and manager.EnabledPackages
+    local all = enabled and enabled.All
+    local packageDirectory = directoryFromPackages(all) or directoryFromPackages(enabled)
+    if packageDirectory ~= nil and packageDirectory ~= "" then
+        return packageDirectory
+    end
+
+    error("[" .. PACKAGE_NAME .. "] Could not resolve the mod directory")
 end
 
 E.modDirectory = resolveModDirectory()

@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<contentpackage name="Just Enough Baro" modversion="1.0.0" gameversion="1.13.4.0" corepackage="false">
+<contentpackage name="Just Enough Baro (JEB)" modversion="1.0.5" gameversion="1.13.4.0" corepackage="false">
   <Text file="%ModDir%/Texts/English.xml" />
 </contentpackage>

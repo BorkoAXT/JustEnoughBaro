@@ -71,7 +71,7 @@ end
 
 local function loadInGameSettings()
     local loaded, errorMessage = pcall(function()
-        local packageFound, contentPackage = trygetpackage("Just Enough Baro")
+        local packageFound, contentPackage = trygetpackage("Just Enough Baro (JEB)")
         if not packageFound then
             return
         end
