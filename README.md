@@ -1,4 +1,4 @@
-# Europa Encyclopedia
+# Just Enough Baro (JEB)
 
 A dynamic in-game journal for Barotrauma, implemented with LuaCsForBarotrauma.
 
@@ -20,8 +20,8 @@ A dynamic in-game journal for Barotrauma, implemented with LuaCsForBarotrauma.
 ## Install
 
 1. Install the current LuaCsForBarotrauma client patch.
-2. Copy this directory to `Barotrauma/LocalMods/Europa Encyclopedia`.
-3. Enable **Europa Encyclopedia** in Barotrauma's mod list and restart the game.
+2. Copy this directory to `Barotrauma/LocalMods/Just Enough Baro`.
+3. Enable **Just Enough Baro** in Barotrauma's mod list and restart the game.
 
 ## Testing
 

@@ -1,4 +1,4 @@
-local E = EuropaEncyclopedia
+local E = JustEnoughBaro
 local wikiCreatures = dofile(E.path("Lua/Client/wiki_data.lua")) or {}
 local roleGuides = dofile(E.path("Lua/Client/role_guides.lua")) or {}
 local submarineWikiData = dofile(E.path("Lua/Client/submarine_wiki_data.lua")) or {}
@@ -63,7 +63,7 @@ local function applyOpenKey(value)
     if requestedKey == nil then
         requestedName = "J"
         requestedKey = Keys.J
-        print("[Europa Encyclopedia] Unknown key name; using J instead.")
+        print("[JEB] Unknown key name; using J instead.")
     end
     openKeyName = requestedName
     openKey = requestedKey
@@ -71,7 +71,7 @@ end
 
 local function loadInGameSettings()
     local loaded, errorMessage = pcall(function()
-        local packageFound, contentPackage = trygetpackage("Europa Encyclopedia")
+        local packageFound, contentPackage = trygetpackage("Just Enough Baro")
         if not packageFound then
             return
         end
@@ -87,7 +87,7 @@ local function loadInGameSettings()
         end)
     end)
     if not loaded then
-        print("[Europa Encyclopedia] Could not load in-game key setting: " .. E.str(errorMessage))
+        print("[JEB] Could not load in-game key setting: " .. E.str(errorMessage))
     end
 end
 
@@ -3116,7 +3116,7 @@ local function createWindow()
     )
     local title = GUI.TextBlock(
         GUI.RectTransform(UI_VECTOR.HEADER_TITLE, titleArea.RectTransform, Anchor.CenterLeft),
-        "EUROPA ENCYCLOPEDIA",
+        "JUST ENOUGH BARO",
         COLOR.CREAM,
         GUI.Style.SubHeadingFont,
         Alignment.CenterLeft,
@@ -3301,7 +3301,7 @@ toggle = function()
         imageOverlay.Visible = false
         imageOverlay = nil
     end
-    print("[Europa Encyclopedia] " .. (visible and "opened" or "closed"))
+    print("[JEB] " .. (visible and "opened" or "closed"))
 end
 
 -- Context-sensitive opening and game hooks ----------------------------------
@@ -3396,7 +3396,7 @@ local function openFocusedEntry()
     window.Visible = true
     navigateTo(category, entry)
     print(
-        "[Europa Encyclopedia] opened focused "
+        "[JEB] opened focused "
             .. string.lower(category)
             .. " entry: "
             .. entry.name
@@ -3421,7 +3421,7 @@ local function updateContextHint()
         )
         contextHint.Color = COLOR.HEADER
         contextHint.RectTransform.RelativeOffset = UI_VECTOR.OFFSET_CONTEXT_HINT
-        contextHint.ToolTip = "Open the Europa Encyclopedia"
+        contextHint.ToolTip = "Open Just Enough Baro"
         contextHint.OnClicked = function()
             if not openFocusedEntry() then
                 toggle()
@@ -3444,13 +3444,13 @@ local function updateContextHint()
         contextHint.ToolTip = "Open the " .. entry.name .. " encyclopedia record"
     else
         contextHintText.Text = "[" .. openKeyName .. "]  ENCYCLOPEDIA"
-        contextHint.ToolTip = "Open the Europa Encyclopedia"
+        contextHint.ToolTip = "Open Just Enough Baro"
     end
     contextHint.Visible = true
     contextHint.AddToGUIUpdateList(false, GUI_ORDER.CONTEXT_HINT)
 end
 
-Hook.Add("think", "EuropaEncyclopedia.Input", function()
+Hook.Add("think", "JustEnoughBaro.Input", function()
     updateContextHint()
     if PlayerInput.KeyHit(openKey) then
         if visible then
@@ -3470,7 +3470,7 @@ Hook.Add("think", "EuropaEncyclopedia.Input", function()
     end
 end)
 
-Game.AddCommand("encyclopedia", "Toggle the Europa Encyclopedia", function()
+Game.AddCommand("encyclopedia", "Toggle Just Enough Baro", function()
     toggle()
 end)
 
@@ -3479,18 +3479,18 @@ Game.AddCommand(
     "Single player: spawn a creature at the cursor and turn spawned monsters into corpses",
     function(args)
         if not Game.IsSingleplayer then
-            print("[Europa Encyclopedia] encyclopedia_corpse is a single-player test command.")
+            print("[JEB] encyclopedia_corpse is a single-player test command.")
             return
         end
         local target = id(args and args[1] or "")
         if target == "" or findCharacterPrefab(target) == nil or target == "human" then
             print(
-                "[Europa Encyclopedia] Usage: encyclopedia_corpse <species identifier>  (example: encyclopedia_corpse mudraptor)"
+                "[JEB] Usage: encyclopedia_corpse <species identifier>  (example: encyclopedia_corpse mudraptor)"
             )
             return
         end
         print(
-            "[Europa Encyclopedia] Spawning "
+            "[JEB] Spawning "
                 .. target
                 .. "; all living monsters will be killed after spawning."
         )
@@ -3501,7 +3501,7 @@ Game.AddCommand(
     end
 )
 
-Hook.Add("stop", "EuropaEncyclopedia.Stop", function()
+Hook.Add("stop", "JustEnoughBaro.Stop", function()
     if backdrop ~= nil then
         backdrop.Visible = false
     end

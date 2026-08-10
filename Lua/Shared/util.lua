@@ -1,7 +1,7 @@
-EuropaEncyclopedia = EuropaEncyclopedia or {}
-local E = EuropaEncyclopedia
+JustEnoughBaro = JustEnoughBaro or {}
+local E = JustEnoughBaro
 
-local PACKAGE_NAME = "Europa Encyclopedia"
+local PACKAGE_NAME = "Just Enough Baro"
 
 local function resolveModDirectory()
     for package in ContentPackageManager.EnabledPackages.All do
