@@ -4,18 +4,20 @@ A dynamic in-game journal for Barotrauma, implemented with LuaCsForBarotrauma.
 
 ## Features
 
-- Bestiary generated from every loaded `CharacterPrefab`, including compatible creature mods.
+- Bestiary generated from every loaded `CharacterPrefab`, grouped into creature families with mission/special-variant names, combat tips and prefab-derived weakspots.
 - A fully unlocked bestiary generated from loaded creature content.
-- Searchable item database generated from every loaded `ItemPrefab`.
+- Searchable gameplay-item database generated from loaded `ItemPrefab` data, excluding decorative furniture, doors and similar construction clutter.
 - Item-category filters for weapons, ammunition, gear, ores, alien/ruin items and more.
 - Read-only profession pages with native-style, hoverable three-column talent trees.
 - Clickable crafting skill requirements that open the associated profession reference.
+- Clickable crafting perks that open and highlight the exact talent in its profession tree.
 - Affliction reference pages with effects, stat stages, treatments and item causes.
 - Fabrication recipes plus an automatically generated **Used to craft** reverse index.
 - Deconstruction outputs, conditions/chances, and an automatically generated source index.
 - Clickable ingredient, output, reverse-crafting, and deconstruction-source navigation.
 - Lazy detail pages and capped list population for large mod packs.
 - Barotrauma-native GUI styles with an in-game configurable open key.
+- Weapon damage-channel normalization, wiring-pin documentation, two-handed Bag-slot explanations and breathing-supply duration tables.
 
 ## Install
 

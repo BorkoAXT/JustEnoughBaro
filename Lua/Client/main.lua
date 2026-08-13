@@ -2,10 +2,12 @@ local E = JustEnoughBaro
 local wikiCreatures = dofile(E.path("Lua/Client/wiki_data.lua")) or {}
 local roleGuides = dofile(E.path("Lua/Client/role_guides.lua")) or {}
 local submarineWikiData = dofile(E.path("Lua/Client/submarine_wiki_data.lua")) or {}
+local wiringWikiData = dofile(E.path("Lua/Client/wiring_tooltips.lua")) or {}
 local items, creatures, submarines, professions, afflictions = {}, {}, {}, {}, {}
 local itemByIdentifier, creatureByIdentifier = {}, {}
 local afflictionByIdentifier = {}
 local professionByIdentifier = {}
+local talentProfession = {}
 local reverseCraft, reverseDeconstruct = {}, {}
 local recipeTalents, recipeBlueprints = {}, {}
 local creatureHabitats = {}
@@ -454,6 +456,46 @@ local function itemFilterCategory(entry)
     return "Miscellaneous"
 end
 
+local function isUsefulCatalogueItem(prefab, identifier)
+    if identifier == "portablepump" then
+        return true
+    end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.WRECKED) then
+        return false
+    end
+    local sourcePath = string.lower(prefab.ContentFile and text(prefab.ContentFile.Path) or "")
+    if E.contains(sourcePath, "/wreck") or E.contains(identifier, "wrecked") then
+        return false
+    end
+    if hasCategory(prefab.Category, ITEM_CATEGORY.DECORATIVE) then
+        return false
+    end
+    local root = prefab.ConfigElement
+    if root == nil then
+        return true
+    end
+    local excludedComponents = { door = true, ladder = true, chair = true, bed = true }
+    for child in root.Elements() do
+        if excludedComponents[id(child.NameAsIdentifier())] then
+            return false
+        end
+    end
+    local furnishingNames = {
+        cabinet = true,
+        desk = true,
+        locker = true,
+        shelf = true,
+        table = true,
+        window = true,
+    }
+    for word in pairs(furnishingNames) do
+        if E.contains(identifier, word) then
+            return false
+        end
+    end
+    return true
+end
+
 -- Indexing and prefab lookup -------------------------------------------------
 
 local function addIndex(index, key, value)
@@ -561,6 +603,193 @@ local function prettyIdentifier(value)
     )
 end
 
+local CREATURE_NAME_OVERRIDES = {
+    hammerhead_mnamed = "Moping Jack",
+    spineling_morbusine = "Viperling",
+    humanhusk = "Husk",
+    terminalcell = "Terminal Cells",
+    hammerheadspawn = "Hammerhead Spawn",
+    hammerheadmatriarch = "Hammerhead Matriarch",
+}
+local CREATURE_WIKI_ALIASES = {
+    hammerhead_mnamed = "mopingjack",
+    spineling_morbusine = "viperling",
+    humanhusk = "husk",
+    husk_chimera = "huskchimera",
+    husk_exosuit = "huskexosuit",
+    mudraptor_passive = "mudraptor",
+    balloon = "petcthulhu",
+    orangeboy = "petraptor",
+    peanut = "petsmallcrawler",
+}
+
+local CREATURE_HABITATS = {
+    charybdis = "The Abyss",
+    endworm = "The Abyss",
+    latcher = "The Abyss",
+    jove = "Eye of Europa (campaign ending)",
+    ancient = "Eye of Europa and Ancient settlements",
+    cyborgworm = "Eye of Europa",
+    fractalguardian = "Alien Ruins",
+    fractalguardian2 = "Alien Ruins",
+    fractalguardian3 = "Alien Ruins",
+    fractalguardian_emp = "Alien Ruins and the campaign ending",
+    portalguardian = "The campaign ending",
+    guardianrepairbot = "Spawned by damaged Guardian variants",
+    leucocyte = "Inside Thalamus-controlled wrecks",
+    terminalcell = "Inside Thalamus-controlled wrecks",
+    swarmfeeder = "Alien Ruins",
+    watcher = "Open waters, especially later biomes",
+}
+
+local CREATURE_WEAKSPOTS = {
+    charybdis = "Mouth",
+    endworm = "Mouth and exposed flesh between armor plates",
+    hammerheadmatriarch = "Egg sac/head",
+    moloch = "Core beneath the shell",
+    molochblack = "Core beneath the shell",
+    watcher = "Eye",
+}
+
+local WIRING_WIKI_ALIASES = {
+    abscomponent = "acoscomponent",
+    engine = "engines",
+    shuttleengine = "engines",
+    pump = "pumps",
+    smallpump = "pumps",
+    largepump = "pumps",
+    door = "doorshatches",
+    hatch = "doorshatches",
+    fabricator = "fabricatordeconstructor",
+    deconstructor = "fabricatordeconstructor",
+    medicalfabricator = "medicalfabricator",
+    dockingport = "dockinghatchport",
+    dockinghatch = "dockinghatchport",
+}
+
+-- The wiki's older connection-panel tables use placeholders such as "The
+-- input signal" for several logic components. These descriptions spell out
+-- the actual operation performed at each of those pins.
+local LOGIC_COMPONENT_PIN_DESCRIPTIONS = {
+    abscomponent = {
+        signalin = "Accepts any number whose absolute value will be calculated.",
+        signalout = "Outputs the absolute (non-negative) value of SIGNAL_IN.",
+    },
+    acoscomponent = {
+        signalin = "Accepts a number from -1 to 1 as a cosine value.",
+        signalout = "Outputs, in degrees, the angle whose cosine is SIGNAL_IN.",
+    },
+    asincomponent = {
+        signalin = "Accepts a number from -1 to 1 as a sine value.",
+        signalout = "Outputs, in degrees, the angle whose sine is SIGNAL_IN.",
+    },
+    atancomponent = {
+        signalin = "Accepts a tangent value and calculates its inverse tangent.",
+        signalinx = "Accepts the X coordinate when the component is used in two-coordinate ATAN2 mode.",
+        signaliny = "Accepts the Y coordinate when the component is used in two-coordinate ATAN2 mode.",
+        signalout = "Outputs the calculated angle in degrees; X and Y inputs use the ATAN2 calculation.",
+    },
+    coscomponent = {
+        signalin = "Accepts an angle in degrees.",
+        signalout = "Outputs the cosine of the angle received through SIGNAL_IN.",
+    },
+    sincomponent = {
+        signalin = "Accepts an angle in degrees.",
+        signalout = "Outputs the sine of the angle received through SIGNAL_IN.",
+    },
+    tancomponent = {
+        signalin = "Accepts an angle in degrees.",
+        signalout = "Outputs the tangent of the angle received through SIGNAL_IN.",
+    },
+    squarerootcomponent = {
+        signalin = "Accepts the number whose square root will be calculated.",
+        signalout = "Outputs the square root of SIGNAL_IN.",
+    },
+    notcomponent = {
+        signalin = "Checks whether this input is receiving a signal.",
+        signalout = "Outputs the configured true signal only while SIGNAL_IN receives no signal.",
+    },
+    andcomponent = {
+        signalin1 = "First condition; both inputs must receive a signal within the configured time frame.",
+        signalin2 = "Second condition; both inputs must receive a signal within the configured time frame.",
+        setoutput = "Changes the value emitted when both input conditions are true.",
+        signalout = "Outputs the configured true value when both inputs receive a signal in time.",
+    },
+    orcomponent = {
+        signalin1 = "First condition; receiving a signal here satisfies the OR operation.",
+        signalin2 = "Second condition; receiving a signal here satisfies the OR operation.",
+        setoutput = "Changes the value emitted when either input condition is true.",
+        signalout = "Outputs the configured true value when either input receives a signal.",
+    },
+    xorcomponent = {
+        signalin1 = "First condition; exactly one of the two inputs must receive a signal.",
+        signalin2 = "Second condition; exactly one of the two inputs must receive a signal.",
+        setoutput = "Changes the value emitted when exactly one input condition is true.",
+        signalout = "Outputs the configured true value when one input, but not both, receives a signal.",
+    },
+    equalscomponent = {
+        signalin1 = "First value to compare for equality.",
+        signalin2 = "Second value to compare for equality.",
+        setoutput = "Changes the value emitted when both compared inputs are equal.",
+        signalout = "Outputs the configured true value when SIGNAL_IN_1 equals SIGNAL_IN_2.",
+    },
+    greatercomponent = {
+        signalin1 = "The value tested as the left side of the greater-than comparison.",
+        signalin2 = "The value tested as the right side of the greater-than comparison.",
+        setoutput = "Changes the value emitted when the comparison is true.",
+        signalout = "Outputs the configured true value when SIGNAL_IN_1 is greater than SIGNAL_IN_2.",
+    },
+    regexfindcomponent = {
+        signalin = "The text to test against the component's regular-expression pattern.",
+        setoutput = "Changes the value emitted when the text matches the pattern.",
+        signalout = "Outputs the configured true value when SIGNAL_IN matches the regular expression.",
+    },
+    signalcheckcomponent = {
+        signalin = "The value to compare with the component's target signal.",
+        setoutput = "Changes the value emitted when the received value matches the target.",
+        settargetsignal = "Changes the target value that SIGNAL_IN must match.",
+        signalout = "Outputs the configured true value when SIGNAL_IN matches the target signal.",
+    },
+    oscillatorcomponent = {
+        setfrequency = "Sets how many oscillation cycles are generated per second, in hertz.",
+        setoutputtype = "Selects the waveform: 0 for pulse, 1 for sine, or 2 for square.",
+        signalout = "Outputs the periodic waveform generated with the selected frequency and type.",
+    },
+}
+
+local function wiringWikiKey(value)
+    return string.gsub(id(value), "[^a-z0-9]", "")
+end
+
+local function creatureBaseIdentifier(identifier)
+    local key = id(identifier)
+    if CREATURE_WIKI_ALIASES[key] ~= nil then
+        return CREATURE_WIKI_ALIASES[key]
+    end
+    return string.gsub(key, "_m$", "")
+end
+
+local function creatureFamily(identifier, displayName)
+    local searchable = id(identifier) .. " " .. creatureBaseIdentifier(identifier) .. " " .. id(displayName)
+    local families = {
+        { "hammerhead", "Hammerheads" },
+        { "crawler", "Crawlers" },
+        { "mudraptor", "Mudraptors" },
+        { "moloch", "Molochs" },
+        { "spineling", "Spinelings" },
+        { "fractalguardian", "Fractal Guardians" },
+        { "husk", "Husks" },
+        { "thresher", "Threshers" },
+        { "worm", "Abyssal creatures" },
+    }
+    for _, pair in ipairs(families) do
+        if E.contains(searchable, pair[1]) then
+            return pair[2]
+        end
+    end
+    return "Other creatures"
+end
+
 local function joinedPretty(collection, separator)
     local values = {}
     if collection ~= nil then
@@ -597,7 +826,7 @@ local function buildDatabase()
     reverseCraft, reverseDeconstruct = {}, {}
     itemByIdentifier, creatureByIdentifier, afflictionByIdentifier, professionByIdentifier =
         {}, {}, {}, {}
-    recipeTalents, recipeBlueprints, creatureHabitats = {}, {}, {}
+    recipeTalents, recipeBlueprints, creatureHabitats, talentProfession = {}, {}, {}, {}
     local seenItems = {}
     for prefab in ItemPrefab.Prefabs do
         if prefab ~= nil and prefab.Identifier ~= nil then
@@ -612,6 +841,7 @@ local function buildDatabase()
                 entry.name ~= ""
                 and not hidden
                 and not isLegacy
+                and isUsefulCatalogueItem(prefab, entry.identifier)
                 and not seenItems[entry.identifier]
             then
                 seenItems[entry.identifier] = true
@@ -755,6 +985,9 @@ local function buildDatabase()
                 treeXml = treeXml,
             }
             professionByIdentifier[professionIdentifier] = professions[#professions]
+            for talentIdentifier in string.gmatch(treeXml or "", 'identifier%s*=%s*"([^"]+)"') do
+                talentProfession[id(talentIdentifier)] = professionIdentifier
+            end
         end
     end
     local seenAfflictionNames = {}
@@ -796,7 +1029,10 @@ local function buildDatabase()
                 creatures[#creatures + 1] = {
                     prefab = prefab,
                     identifier = id(prefab.Identifier),
-                    name = text(prefab.Name),
+                    name = CREATURE_NAME_OVERRIDES[identifier]
+                        or (identifier:match("_m$") and string.gsub(text(prefab.Name), "_m$", "") .. " (Mission variant)")
+                        or text(prefab.Name),
+                    family = creatureFamily(identifier, text(prefab.Name)),
                     habitats = creatureHabitats[id(fileName)] or creatureHabitats[id(
                         prefab.Identifier
                     )] or {},
@@ -809,6 +1045,9 @@ local function buildDatabase()
         return a.name < b.name
     end)
     table.sort(creatures, function(a, b)
+        if a.family ~= b.family then
+            return a.family < b.family
+        end
         return a.name < b.name
     end)
     table.sort(submarines, function(a, b)
@@ -873,6 +1112,7 @@ end
 
 local function wikiCreatureSprite(entry)
     local wiki = wikiCreatures[entry.identifier]
+        or wikiCreatures[creatureBaseIdentifier(entry.identifier)]
     if wiki == nil or wiki.image == nil or wiki.image == "" then
         return nil
     end
@@ -931,6 +1171,18 @@ local function clear(component)
     if component ~= nil then
         component.Content.ClearChildren()
     end
+end
+
+local function resetScroll(component)
+    if component == nil then
+        return
+    end
+    pcall(function()
+        component.BarScroll = 0
+    end)
+    pcall(function()
+        component.ScrollBar.BarScroll = 0
+    end)
 end
 
 local function semanticTextColor(value)
@@ -1168,6 +1420,10 @@ local function skillRequirement(parent, identifier, level, displayName, iconSpri
         end
         local profession = professionByIdentifier[jobIdentifier]
         if profession ~= nil then
+            currentSearch = ""
+            if searchBox ~= nil then
+                searchBox.Text = ""
+            end
             navigateTo("Professions", profession, id(identifier))
         end
     end
@@ -1190,7 +1446,25 @@ local function recipeUnlockRequirements(parent, prefab)
     local blueprints = recipeBlueprints[identifier] or {}
     for _, talent in ipairs(talents) do
         local name = text(talent.DisplayName)
-        requirementRow(parent, "Required perk: " .. name, talent.Icon, name)
+        local professionIdentifier = talentProfession[id(talent.Identifier)]
+        local function openTalent()
+            local profession = professionByIdentifier[professionIdentifier]
+            if profession == nil then
+                return
+            end
+            currentSearch = ""
+            if searchBox ~= nil then
+                searchBox.Text = ""
+            end
+            navigateTo("Professions", profession, id(talent.Identifier))
+        end
+        requirementRow(
+            parent,
+            "Required perk: " .. name,
+            talent.Icon,
+            name .. "\n\nClick to open this perk in its profession tree.",
+            professionIdentifier ~= nil and openTalent or nil
+        )
     end
     for _, blueprint in ipairs(blueprints) do
         local sprite = blueprint.prefab.InventoryIcon or blueprint.prefab.Sprite
@@ -1285,6 +1559,26 @@ local function recipeIngredient(
         return
     end
     if #candidates > 1 then
+        local allAmmunitionContainers = true
+        for _, candidate in ipairs(candidates) do
+            local candidateIdentifier = id(candidate.Identifier)
+            if
+                not E.contains(candidateIdentifier, "box")
+                and not E.contains(candidateIdentifier, "shells")
+            then
+                allAmmunitionContainers = false
+                break
+            end
+        end
+        if allAmmunitionContainers and (tonumber(maximumCondition) or 1) < 1 then
+            requirementRow(
+                parent,
+                "Any compatible empty ammunition box" .. suffix,
+                candidates[1].InventoryIcon or candidates[1].Sprite,
+                "Use any compatible ammunition container that meets the empty-condition requirement."
+            )
+            return
+        end
         local names = {}
         for _, prefab in ipairs(candidates) do
             append(names, text(prefab.Name))
@@ -1422,9 +1716,12 @@ local function showItemCapabilities(prefab, parent)
     if root == nil then
         return
     end
-    local protection, stats, skillBonuses, attacks, requirements, equipment = {}, {}, {}, {}, {}, {}
+    local protection, stats, skillBonuses, attacks, requirements, equipment, connections = {}, {}, {}, {}, {}, {}, {}
+    local ammunitionTags, isRangedWeapon = {}, false
+    local connectionOrder = 0
     local attackIdentities = {}
     local attackEffects = {}
+    local attackScalars = {}
     local function addAttack(value)
         local identity = id(value)
         if attackIdentities[identity] then
@@ -1454,6 +1751,20 @@ local function showItemCapabilities(prefab, parent)
             probability = tonumber(probability) or 1,
         })
     end
+    local function addAttackScalar(labelText, value, suffix)
+        local key = id(labelText)
+        attackScalars[key] = attackScalars[key] or {
+            label = labelText,
+            suffix = suffix or "",
+            values = {},
+            seen = {},
+        }
+        local normalized = numberText(value)
+        if not attackScalars[key].seen[normalized] then
+            attackScalars[key].seen[normalized] = true
+            attackScalars[key].values[#attackScalars[key].values + 1] = normalized
+        end
+    end
     local function addAffectedEffects(target, identifiers, suffix)
         for identifier in string.gmatch(identifiers or "", "[^,%s]+") do
             target[#target + 1] = prettyIdentifier(identifier) .. suffix
@@ -1464,18 +1775,46 @@ local function showItemCapabilities(prefab, parent)
         local nextContext = context
         if name == "fabricate" or name == "deconstruct" then
             return
+        elseif name == "connectionpanel" then
+            nextContext = "connectionpanel"
+        elseif
+            context == "connectionpanel"
+            and (name == "connection" or name == "input" or name == "output")
+        then
+            local connectionName = element.GetAttributeString("name", "")
+            if connectionName ~= "" then
+                local displayIdentifier = element.GetAttributeString("displayname", "")
+                local displayKey = string.match(displayIdentifier, "^connection%.([^~]+)")
+                if displayKey == "signalinx" or displayKey == "signaloutx" then
+                    displayKey = connectionName
+                end
+                connectionOrder = connectionOrder + 1
+                connections[id(connectionName)] = {
+                    name = prettyIdentifier(displayKey or connectionName),
+                    wikiKey = wiringWikiKey(displayKey or connectionName),
+                    direction = name == "input" and "INPUT"
+                        or (name == "output" and "OUTPUT" or "PIN"),
+                    order = connectionOrder,
+                }
+            end
         end
         if name == "wearable" then
             nextContext = "wearable"
             local slots = element.GetAttributeString("slots", "")
             if slots ~= "" then
                 equipment[#equipment + 1] = "EQUIP SLOTS  " .. slots
+                if E.contains(slots, "bag") then
+                    equipment[#equipment + 1] = "BAG SLOT  Held with both hands; cannot be stored in normal inventory slots."
+                end
             end
         elseif name == "meleeweapon" then
             nextContext = "weapon"
             local slots = element.GetAttributeString("slots", "")
             if slots ~= "" then
                 equipment[#equipment + 1] = "HAND SLOTS  " .. slots
+                if E.contains(slots, "bag") then
+                    equipment[#equipment + 1] = "BAG SLOT  Held with both hands; cannot be stored in normal inventory slots."
+                end
             end
             local reload = element.GetAttributeFloat("reload", 0)
             if reload > 0 then
@@ -1483,6 +1822,7 @@ local function showItemCapabilities(prefab, parent)
             end
         elseif name == "rangedweapon" then
             nextContext = "weapon"
+            isRangedWeapon = true
             equipment[#equipment + 1] = "SPREAD  "
                 .. text(element.GetAttributeFloat("spread", 0))
                 .. "°  •  UNSKILLED "
@@ -1490,6 +1830,10 @@ local function showItemCapabilities(prefab, parent)
                 .. "°"
         elseif name == "projectile" then
             nextContext = "weapon"
+        elseif name == "containable" then
+            for compatible in string.gmatch(element.GetAttributeString("items", ""), "[^,%s]+") do
+                ammunitionTags[id(compatible)] = true
+            end
         elseif name == "damagemodifier" and context == "wearable" then
             local multiplier = element.GetAttributeFloat("damagemultiplier", 1)
             local affected = element.GetAttributeString(
@@ -1548,14 +1892,16 @@ local function showItemCapabilities(prefab, parent)
             local itemDamage = element.GetAttributeFloat("itemdamage", 0)
             local penetration = element.GetAttributeFloat("penetration", 0)
             if structureDamage > 0 then
-                addAttack("Structure damage  " .. text(structureDamage))
+                addAttackScalar("Structure damage", structureDamage)
             end
             if itemDamage > 0 then
-                addAttack("Item damage  " .. text(itemDamage))
+                addAttackScalar("Item damage", itemDamage)
             end
             if penetration > 0 then
-                addAttack(
-                    "Penetration  " .. text(math.floor(penetration * PERCENT_SCALE + 0.5)) .. "%"
+                addAttackScalar(
+                    "Penetration",
+                    math.floor(penetration * PERCENT_SCALE + 0.5),
+                    "%"
                 )
             end
         elseif name == "affliction" and context == "attack" then
@@ -1578,6 +1924,19 @@ local function showItemCapabilities(prefab, parent)
         end
     end
     walk(root, nil)
+    local scalarKeys = {}
+    for key in pairs(attackScalars) do
+        scalarKeys[#scalarKeys + 1] = key
+    end
+    table.sort(scalarKeys)
+    for _, key in ipairs(scalarKeys) do
+        local scalar = attackScalars[key]
+        local values = table.concat(scalar.values, " / ") .. scalar.suffix
+        if #scalar.values > 1 then
+            values = values .. "  (attack components)"
+        end
+        addAttack(scalar.label .. "  " .. values)
+    end
     local sortedEffectIdentifiers = {}
     for effectIdentifier in pairs(attackEffects) do
         append(sortedEffectIdentifiers, effectIdentifier)
@@ -1642,11 +2001,281 @@ local function showItemCapabilities(prefab, parent)
             coloredLine(parent, value, COLOR.TEXT)
         end
     end
+    if isRangedWeapon and next(ammunitionTags) ~= nil then
+        local ammunition = {}
+        local function containsDamageElement(element)
+            if element == nil then
+                return false
+            end
+            local elementName = id(element.NameAsIdentifier())
+            if elementName == "attack" or elementName == "explosion" then
+                return true
+            end
+            for child in element.Elements() do
+                if containsDamageElement(child) then
+                    return true
+                end
+            end
+            return false
+        end
+        local function ammunitionDamageSummary(ammunitionPrefab)
+            local totals = {}
+            local function scan(element, inAttack)
+                if element == nil then
+                    return
+                end
+                local elementName = id(element.NameAsIdentifier())
+                local attackContext = inAttack or elementName == "attack" or elementName == "explosion"
+                if elementName == "affliction" and attackContext then
+                    local effectIdentifier = id(element.GetAttributeString("identifier", "damage"))
+                    local strength = element.GetAttributeFloat(
+                        "strength",
+                        element.GetAttributeFloat("amount", 0)
+                    )
+                    totals[effectIdentifier] = (totals[effectIdentifier] or 0) + strength
+                end
+                for child in element.Elements() do
+                    scan(child, attackContext)
+                end
+            end
+            scan(ammunitionPrefab.ConfigElement, false)
+            local parts = {}
+            for effectIdentifier, strength in pairs(totals) do
+                if strength > 0 then
+                    parts[#parts + 1] = prettyIdentifier(effectIdentifier)
+                        .. " "
+                        .. numberText(strength)
+                end
+            end
+            table.sort(parts)
+            return table.concat(parts, ", ")
+        end
+        for _, candidate in ipairs(items) do
+            local matches = ammunitionTags[candidate.identifier] == true
+            if not matches then
+                for tag in candidate.prefab.Tags do
+                    if ammunitionTags[id(tag)] then
+                        matches = true
+                        break
+                    end
+                end
+            end
+            if
+                matches
+                and candidate.identifier ~= id(prefab.Identifier)
+                and containsDamageElement(candidate.prefab.ConfigElement)
+            then
+                ammunition[#ammunition + 1] = candidate
+            end
+        end
+        table.sort(ammunition, function(a, b)
+            return a.name < b.name
+        end)
+        if #ammunition > 0 then
+            heading(parent, "\nDamage by ammunition", COLOR.TEXT)
+            line(parent, "Weapon damage is defined by its loaded projectile. Open an ammunition entry for the complete damage breakdown.")
+            for _, candidate in ipairs(ammunition) do
+                local summary = ammunitionDamageSummary(candidate.prefab)
+                itemButton(
+                    parent,
+                    candidate,
+                    summary ~= "" and "  •  " .. summary or "  •  damage source"
+                )
+            end
+        end
+    end
     if #requirements > 0 then
         heading(parent, "\nRequires to operate")
         for _, value in ipairs(requirements) do
             line(parent, value)
         end
+    end
+    local itemName = text(prefab.Name)
+    local identifierKey = wiringWikiKey(prefab.Identifier)
+    local nameKey = wiringWikiKey(itemName)
+    local wikiKey = WIRING_WIKI_ALIASES[identifierKey] or identifierKey
+    local wiringWiki = wiringWikiData[wikiKey] or wiringWikiData[nameKey]
+    -- Some component pages do not publish a connection-panel table, but do
+    -- publish an exact functional description. Keep that description tied to
+    -- the actual item even when a compatible panel layout comes from an alias.
+    local directWiringWiki = wiringWikiData[identifierKey] or wiringWikiData[nameKey]
+    local wiringSummary = text(
+        (directWiringWiki and directWiringWiki.summary)
+        or (wiringWiki and wiringWiki.summary)
+        or ""
+    )
+    local connectionDescriptions = {}
+    local connectionWikiNames = {}
+    local connectionWikiDirections = {}
+    if wiringWiki ~= nil then
+        for _, wikiPin in ipairs(wiringWiki.pins or {}) do
+            local pinKey = wiringWikiKey(wikiPin.name)
+            connectionDescriptions[pinKey] = wikiPin.tooltip
+            connectionWikiNames[pinKey] = wikiPin.name
+            connectionWikiDirections[pinKey] = string.upper(wikiPin.direction or "")
+        end
+    end
+    local connectionKeys = {}
+    for key in pairs(connections) do
+        connectionKeys[#connectionKeys + 1] = key
+    end
+    table.sort(connectionKeys, function(a, b)
+        return connections[a].order < connections[b].order
+    end)
+    if wiringWiki ~= nil then
+        local matchedPins = 0
+        for _, key in ipairs(connectionKeys) do
+            local pin = connections[key]
+            if
+                connectionDescriptions[pin.wikiKey] ~= nil
+                and connectionWikiDirections[pin.wikiKey] == pin.direction
+            then
+                matchedPins = matchedPins + 1
+            end
+        end
+        if matchedPins ~= #connectionKeys or matchedPins ~= #(wiringWiki.pins or {}) then
+            connectionDescriptions = {}
+            connectionWikiNames = {}
+        end
+    end
+    if #connectionKeys > 0 then
+        local inputKeys, outputKeys = {}, {}
+        for _, key in ipairs(connectionKeys) do
+            if connections[key].direction == "OUTPUT" then
+                outputKeys[#outputKeys + 1] = key
+            else
+                inputKeys[#inputKeys + 1] = key
+            end
+        end
+        local rows = math.max(1, #inputKeys, #outputKeys)
+        local card = GUI.Frame(
+            GUI.RectTransform(relativeVector(0.46, 0.17 + rows * 0.065), parent, Anchor.TopCenter),
+            "ConnectionPanel"
+        )
+        card.RectTransform.MinSize = Point(400, 210 + (rows - 1) * 42)
+        card.RectTransform.MaxSize = Point(520, 210 + (rows - 1) * 42)
+        local cardTitle = GUI.TextBlock(
+            GUI.RectTransform(relativeVector(0.94, 0.10), card.RectTransform, Anchor.TopCenter),
+            "Connection Panel for " .. itemName,
+            COLOR.GREEN,
+            GUI.Style.SmallFont,
+            Alignment.Center,
+            false,
+            ""
+        )
+        cardTitle.RectTransform.RelativeOffset = relativeVector(0, 0.02)
+        cardTitle.CanBeFocused = false
+        local instruction = GUI.TextBlock(
+            GUI.RectTransform(relativeVector(0.94, 0.08), card.RectTransform, Anchor.TopCenter),
+            "Hover over pins to see their descriptions.",
+            COLOR.HEADING,
+            GUI.Style.SmallFont,
+            Alignment.Center,
+            false,
+            ""
+        )
+        instruction.RectTransform.RelativeOffset = relativeVector(0, 0.105)
+        instruction.CanBeFocused = false
+        local panel = GUI.Frame(
+            GUI.RectTransform(relativeVector(0.90, 0.60), card.RectTransform, Anchor.Center),
+            "ConnectionPanelFront"
+        )
+        panel.RectTransform.MinSize = Point(360, 92 + (rows - 1) * 38)
+        panel.RectTransform.MaxSize = Point(480, 92 + (rows - 1) * 38)
+        local inputs = GUI.LayoutGroup(
+            GUI.RectTransform(relativeVector(0.46, 0.86), panel.RectTransform, Anchor.CenterLeft),
+            false,
+            Anchor.TopLeft
+        )
+        local outputs = GUI.LayoutGroup(
+            GUI.RectTransform(relativeVector(0.46, 0.86), panel.RectTransform, Anchor.CenterRight),
+            false,
+            Anchor.TopRight
+        )
+        local function addPin(target, key, isOutput)
+            local pin = connections[key]
+            local logicDescriptions = LOGIC_COMPONENT_PIN_DESCRIPTIONS[identifierKey]
+                or LOGIC_COMPONENT_PIN_DESCRIPTIONS[nameKey]
+            local exactLogicDescription = logicDescriptions
+                and (logicDescriptions[pin.wikiKey] or logicDescriptions[wiringWikiKey(key)])
+            local pinDescription = exactLogicDescription
+                or connectionDescriptions[pin.wikiKey]
+                or connectionDescriptions[wiringWikiKey(key)]
+                or ""
+            local description
+            if exactLogicDescription ~= nil then
+                description = exactLogicDescription
+            elseif wiringSummary ~= "" and pinDescription ~= "" then
+                description = wiringSummary .. "\n\n" .. pinDescription
+            elseif wiringSummary ~= "" then
+                description = wiringSummary
+                    .. "\n\nThe official connection panel does not provide a more specific description for this pin."
+            elseif pinDescription ~= "" then
+                description = pinDescription
+            else
+                description = "The official wiki does not currently provide a description for this pin."
+            end
+            local displayName = connectionWikiNames[pin.wikiKey]
+                or connectionWikiNames[wiringWikiKey(key)]
+                or key
+            local row = GUI.Frame(
+                GUI.RectTransform(relativeVector(1, math.min(0.30, 0.82 / rows)), target),
+                nil
+            )
+            row.RectTransform.MinSize = Point(0, 38)
+            row.RectTransform.MaxSize = Point(1000, 42)
+            local socket = GUI.Frame(
+                GUI.RectTransform(
+                    relativeVector(0.16, 0.76),
+                    row.RectTransform,
+                    isOutput and Anchor.CenterRight or Anchor.CenterLeft
+                ),
+                "ConnectionPanelConnection"
+            )
+            socket.RectTransform.MinSize = Point(34, 34)
+            socket.RectTransform.MaxSize = Point(38, 38)
+            local isPower = E.contains(key, "power")
+            local pinLabel = GUI.Frame(
+                GUI.RectTransform(
+                    relativeVector(0.82, 0.70),
+                    row.RectTransform,
+                    isOutput and Anchor.CenterLeft or Anchor.CenterRight
+                ),
+                "ConnectionPanelLabel"
+            )
+            pinLabel.RectTransform.MinSize = Point(110, 28)
+            pinLabel.RectTransform.MaxSize = Point(220, 34)
+            pinLabel.Color = isPower and COLOR.RED or COLOR.CYAN
+            local pinText = GUI.TextBlock(
+                GUI.RectTransform(relativeVector(0.94, 0.90), pinLabel.RectTransform, Anchor.Center),
+                string.upper(displayName),
+                COLOR.CREAM,
+                GUI.Style.SmallFont,
+                Alignment.Center,
+                false,
+                ""
+            )
+            pinText.CanBeFocused = false
+            pinLabel.ToolTip = description
+            pinText.ToolTip = description
+            socket.ToolTip = description
+        end
+        for _, key in ipairs(inputKeys) do
+            addPin(inputs.RectTransform, key, false)
+        end
+        for _, key in ipairs(outputKeys) do
+            addPin(outputs.RectTransform, key, true)
+        end
+        local requirement = GUI.TextBlock(
+            GUI.RectTransform(relativeVector(0.94, 0.10), card.RectTransform, Anchor.BottomCenter),
+            "Requires:  🔧  Screwdriver",
+            COLOR.GREEN,
+            GUI.Style.SmallFont,
+            Alignment.Center,
+            false,
+            ""
+        )
+        requirement.CanBeFocused = false
     end
 end
 
@@ -1733,6 +2362,67 @@ local function showMerchantInfo(prefab, parent)
     if liveCount == 0 then
         line(parent, "Live adjusted prices appear while docked at an applicable campaign merchant.")
     end
+end
+
+local function durationText(seconds)
+    local total = math.floor((tonumber(seconds) or 0) + 0.5)
+    local minutes = math.floor(total / 60)
+    local remaining = total % 60
+    return text(minutes) .. "m " .. text(remaining) .. "s"
+end
+
+local function showSupplyDuration(prefab, parent)
+    local identifier = id(prefab.Identifier)
+    if E.contains(identifier, "fuelrod") then
+        local durability = tonumber(safeField(prefab, "Health", 100)) or 100
+        heading(parent, "\nFuel endurance by quality")
+        line(
+            parent,
+            "Reactor runtime is not a fixed clock: it changes with fission rate, reactor fuel efficiency, and the number of inserted rods. Quality increases rod durability."
+        )
+        for _, quality in ipairs({
+            { "Normal", 1 },
+            { "Good", 1.1 },
+            { "Excellent", 1.2 },
+            { "Masterwork", 1.3 },
+        }) do
+            line(parent, quality[1] .. "  •  " .. numberText(durability * quality[2]) .. " durability")
+        end
+        return
+    end
+    local normalDuration = nil
+    if E.contains(identifier, "divingmask") or E.contains(identifier, "clowndivingmask") then
+        normalDuration = 400
+    elseif
+        E.contains(identifier, "divingsuit")
+        or identifier == "slipsuit"
+        or identifier == "pucs"
+        or identifier == "exosuit"
+    then
+        normalDuration = 666
+    end
+    if normalDuration == nil then
+        return
+    end
+    heading(parent, "\nBreathing-supply endurance")
+    line(parent, "Times assume continuous use with a full tank.")
+    local qualities = {
+        { "Normal", 1 },
+        { "Good", 1.1 },
+        { "Excellent", 1.2 },
+        { "Masterwork", 1.3 },
+    }
+    for _, quality in ipairs(qualities) do
+        line(
+            parent,
+            quality[1]
+                .. "  •  Oxygen Tank "
+                .. durationText(normalDuration * quality[2])
+                .. "  •  Oxygenite Tank "
+                .. durationText(normalDuration * 2 * quality[2])
+        )
+    end
+    line(parent, "Fuel tanks are not breathing supplies and cause oxygen loss; Incendium fuel also burns the wearer.")
 end
 
 -- Detail pages ---------------------------------------------------------------
@@ -1928,6 +2618,7 @@ showItem = function(entry)
     end
 
     showItemCapabilities(p, detailList.Content.RectTransform)
+    showSupplyDuration(p, detailList.Content.RectTransform)
     showMerchantInfo(p, detailList.Content.RectTransform)
 end
 
@@ -1999,6 +2690,7 @@ local function showCreature(entry)
     local p = entry.prefab
     heading(detailList.Content.RectTransform, entry.name)
     local wiki = wikiCreatures[entry.identifier]
+        or wikiCreatures[creatureBaseIdentifier(entry.identifier)]
     local preview = wikiCreatureSprite(entry) or creaturePreviewSprite(p)
     if preview ~= nil then
         local previewFrame = GUI.Frame(
@@ -2033,6 +2725,21 @@ local function showCreature(entry)
         end
     end
     line(detailList.Content.RectTransform, "SPECIES  " .. entry.name)
+    local baseIdentifier = creatureBaseIdentifier(entry.identifier)
+    local foundIn = CREATURE_HABITATS[baseIdentifier]
+    if foundIn == nil and #entry.habitats > 0 then
+        foundIn = table.concat(entry.habitats, ", ")
+    end
+    if foundIn == nil then
+        if entry.family == "Husks" then
+            foundIn = "Submarines, wrecks, ruins, and locations affected by the Husk infection"
+        elseif entry.family == "Other creatures" then
+            foundIn = "Special encounters, ruins, caves, or open waters depending on the creature"
+        else
+            foundIn = "Normal open waters and mission encounters"
+        end
+    end
+    line(detailList.Content.RectTransform, "FOUND IN  " .. foundIn)
     local variantIdentifier = id(p.VariantOf)
     if variantIdentifier ~= "" then
         local parentPrefab = findCharacterPrefab(variantIdentifier)
@@ -2051,31 +2758,125 @@ local function showCreature(entry)
             description ~= "" and description
                 or "No official description is provided by the loaded content package."
         )
-        if wiki ~= nil then
-            line(
-                detailList.Content.RectTransform,
-                "SOURCE  Official Barotrauma Wiki  •  current game statistics remain prefab-derived"
-            )
-        end
         local health = p.ConfigElement.GetChildElement("health")
         local vitality = health and health.GetAttributeFloat("vitality", 0) or 0
         if vitality > 0 then
             heading(detailList.Content.RectTransform, "\nHealth")
             line(detailList.Content.RectTransform, "VITALITY  " .. text(vitality))
         end
-        local group = text(p.Group)
-        if group ~= "" then
-            line(detailList.Content.RectTransform, "GROUP  " .. prettyIdentifier(group))
+        if entry.identifier:match("_m$") then
+            heading(detailList.Content.RectTransform, "\nMission-variant differences")
+            line(
+                detailList.Content.RectTransform,
+                "BOSS MISSION VARIANT  •  Uses a boss health bar and mission-enforced aggression."
+            )
+            local parentPrefab = p.ParentPrefab
+            local parentHealth = parentPrefab
+                    and parentPrefab.ConfigElement
+                    and parentPrefab.ConfigElement.GetChildElement("health")
+                or nil
+            local parentVitality = parentHealth and parentHealth.GetAttributeFloat("vitality", 0)
+                or 0
+            if vitality > 0 and parentVitality > 0 and vitality ~= parentVitality then
+                line(
+                    detailList.Content.RectTransform,
+                    "VITALITY  " .. numberText(parentVitality) .. " normal → " .. numberText(vitality) .. " mission"
+                )
+            end
+            line(
+                detailList.Content.RectTransform,
+                "Other values shown on this page come from the mission prefab, not the normal creature."
+            )
         end
     end
-    heading(detailList.Content.RectTransform, "\nFound in")
-    if #entry.habitats > 0 then
-        line(detailList.Content.RectTransform, table.concat(entry.habitats, ", "))
-    else
+    local familyTips = {
+        ["Hammerheads"] = "Keep the submarine moving and deny them a clean charge at the hull.",
+        ["Crawlers"] = "Watch breached compartments: crawlers can enter the submarine and overwhelm isolated crew.",
+        ["Mudraptors"] = "Their armor makes frontal shots inefficient; maintain distance and target exposed limbs or gaps.",
+        ["Molochs"] = "Their soft core is the priority target. Active sonar can attract and agitate them.",
+        ["Spinelings"] = "Change direction when they line up a volley and engage after their spines are spent.",
+        ["Fractal Guardians"] = "Use cover inside ruins and avoid fighting their ranged and melee attacks in open corridors.",
+        ["Husks"] = "Keep your distance and treat any husk infection immediately after contact.",
+        ["Threshers"] = "Avoid their mouth and concentrate fire on less-armored tissue.",
+        ["Abyssal creatures"] = "Use heavy submarine weapons, preserve distance, and keep repair teams ready before engaging.",
+        ["Other creatures"] = "Observe its attack pattern before committing; preserve distance and protect breached compartments.",
+    }
+    heading(detailList.Content.RectTransform, "\nCombat notes")
+    if entry.identifier == "hammerheadmatriarch" then
+        line(detailList.Content.RectTransform, "BEHAVIOR  Passive until provoked.")
+    end
+    line(detailList.Content.RectTransform, "TIP  " .. familyTips[entry.family])
+    local weakspots, strongestMultiplier = {}, 1
+    local damageTypes = {}
+    local function scanWeakspots(element, limbName)
+        if element == nil then
+            return
+        end
+        local elementName = id(element.NameAsIdentifier())
+        local currentLimb = limbName
+        if elementName == "limb" then
+            currentLimb = element.GetAttributeString(
+                "name",
+                element.GetAttributeString("type", element.GetAttributeString("id", "Body"))
+            )
+        end
+        local multiplier = element.GetAttributeFloat("damagemultiplier", 1)
+        if elementName == "damagemodifier" then
+            local affected = element.GetAttributeString(
+                "afflictionidentifiers",
+                element.GetAttributeString("afflictiontypes", "")
+            )
+            for affectedType in string.gmatch(affected, "[^,%s]+") do
+                local key = id(affectedType)
+                local previous = damageTypes[key]
+                if previous == nil or multiplier > previous.multiplier then
+                    damageTypes[key] = {
+                        name = prettyIdentifier(affectedType),
+                        multiplier = multiplier,
+                    }
+                end
+            end
+        end
+        if currentLimb ~= nil and multiplier > strongestMultiplier then
+            strongestMultiplier = multiplier
+            weakspots = { prettyIdentifier(currentLimb) }
+        elseif currentLimb ~= nil and multiplier == strongestMultiplier and multiplier > 1 then
+            weakspots[#weakspots + 1] = prettyIdentifier(currentLimb)
+        end
+        for child in element.Elements() do
+            scanWeakspots(child, currentLimb)
+        end
+    end
+    scanWeakspots(p.ConfigElement, nil)
+    if #weakspots > 0 then
         line(
             detailList.Content.RectTransform,
-            "No standard monster-event habitat is declared for this creature."
+            "WEAKSPOTS  " .. table.concat(weakspots, ", ") .. "  •  " .. numberText(strongestMultiplier) .. "× damage"
         )
+    elseif CREATURE_WEAKSPOTS[baseIdentifier] ~= nil then
+        line(
+            detailList.Content.RectTransform,
+            "WEAKSPOTS  " .. CREATURE_WEAKSPOTS[baseIdentifier]
+        )
+    else
+        line(detailList.Content.RectTransform, "WEAKSPOTS  No special weakspot; target exposed, unarmored body parts.")
+    end
+    local vulnerable, resistant = {}, {}
+    for _, damageType in pairs(damageTypes) do
+        local description = damageType.name .. " " .. numberText(damageType.multiplier) .. "×"
+        if damageType.multiplier > 1 then
+            vulnerable[#vulnerable + 1] = description
+        elseif damageType.multiplier < 1 then
+            resistant[#resistant + 1] = description
+        end
+    end
+    table.sort(vulnerable)
+    table.sort(resistant)
+    if #vulnerable > 0 then
+        line(detailList.Content.RectTransform, "TAKES MOST DAMAGE FROM  " .. table.concat(vulnerable, ", "))
+    end
+    if #resistant > 0 then
+        line(detailList.Content.RectTransform, "RESISTANCES  " .. table.concat(resistant, ", "))
     end
     local drops = collectCreatureDrops(p)
     heading(detailList.Content.RectTransform, "\nDrops")
@@ -2360,7 +3161,7 @@ local function afflictionIcon(prefab)
     return nil
 end
 
-local function talentTile(parent, identifier, tileSize)
+local function talentTile(parent, identifier, tileSize, focusedIdentifier)
     local talent = findTalent(identifier)
     local tile = GUI.Frame(
         GUI.RectTransform(tileSize or UI_VECTOR.TALENT_TILE, parent, Anchor.CenterLeft),
@@ -2380,16 +3181,20 @@ local function talentTile(parent, identifier, tileSize)
     local description = talent and cleanDisplayText(talent.Description)
         or "No description is exposed by this talent prefab."
     tile.ToolTip = name .. "\n\n" .. description
+    if id(identifier) == id(focusedIdentifier) then
+        tile.Color = COLOR.GOLD
+        tile.ToolTip = "CRAFTING REQUIREMENT\n\n" .. tile.ToolTip
+    end
     return tile
 end
 
-local function centeredTalentTiles(layout, identifiers, tileSize, tileWidth)
+local function centeredTalentTiles(layout, identifiers, tileSize, tileWidth, focusedIdentifier)
     local spacerWidth = math.max(0, (1 - #identifiers * tileWidth) / 2)
     if spacerWidth > 0 then
         GUI.Frame(GUI.RectTransform(relativeVector(spacerWidth, 1), layout), nil)
     end
     for _, identifier in ipairs(identifiers) do
-        talentTile(layout, identifier, tileSize)
+        talentTile(layout, identifier, tileSize, focusedIdentifier)
     end
     if spacerWidth > 0 then
         GUI.Frame(GUI.RectTransform(relativeVector(spacerWidth, 1), layout), nil)
@@ -2518,10 +3323,18 @@ local function showProfession(entry, focusSkill)
             string.gmatch(subtreeBody, "<[Tt]alent[Oo]ptions[^>]*>(.-)</[Tt]alent[Oo]ptions>")
         do
             local stage = {}
-            for optionTag in string.gmatch(stageBody, "<[Tt]alent[Oo]ption%s+([^>/]-)/?>") do
-                local identifier = xmlAttribute(optionTag, "identifier", "")
-                if identifier ~= "" then
-                    stage[#stage + 1] = identifier
+            local showcaseTag = string.match(stageBody, "<[Ss]how[Cc]ase[Tt]alent%s+([^>]*)>")
+            if showcaseTag ~= nil then
+                local showcaseIdentifier = xmlAttribute(showcaseTag, "identifier", "")
+                if showcaseIdentifier ~= "" then
+                    stage[#stage + 1] = showcaseIdentifier
+                end
+            else
+                for optionTag in string.gmatch(stageBody, "<[Tt]alent[Oo]ption%s+([^>/]-)/?>") do
+                    local identifier = xmlAttribute(optionTag, "identifier", "")
+                    if identifier ~= "" then
+                        stage[#stage + 1] = identifier
+                    end
                 end
             end
             path.stages[#path.stages + 1] = stage
@@ -2555,7 +3368,8 @@ local function showProfession(entry, focusSkill)
                     primaryOptions.RectTransform,
                     stage,
                     UI_VECTOR.TALENT_PRIMARY_TILE,
-                    TALENT_PRIMARY_TILE_WIDTH
+                    TALENT_PRIMARY_TILE_WIDTH,
+                    focusSkill
                 )
             end
         end
@@ -2616,7 +3430,8 @@ local function showProfession(entry, focusSkill)
                     options.RectTransform,
                     stage,
                     UI_VECTOR.TALENT_TILE,
-                    TALENT_TILE_WIDTH
+                    TALENT_TILE_WIDTH,
+                    focusSkill
                 )
             end
         end
@@ -2924,6 +3739,7 @@ navigateTo = function(category, entry, focus)
     else
         showAffliction(entry)
     end
+    resetScroll(detailList)
 end
 
 -- Navigation and window construction ----------------------------------------
@@ -2959,7 +3775,9 @@ populateList = function(forceSearch)
             category =
                 text(safeField(entry.prefab, "AfflictionType", safeField(entry.prefab, "Type", "")))
         end
+        local searching = text(currentSearch) ~= ""
         local matchesItemFilter = currentCategory ~= "Items"
+            or searching
             or itemCategoryFilter == "All"
             or itemFilterCategory(entry) == itemCategoryFilter
         if
@@ -2974,6 +3792,10 @@ populateList = function(forceSearch)
             shown = shown + 1
             if shown <= limit then
                 local entryLabel = entry.name
+                if currentCategory == "Bestiary" then
+                    entryLabel = entry.identifier == "jove" and entry.name .. " (Spoiler)"
+                        or entry.name
+                end
                 local button = GUI.Button(
                     GUI.RectTransform(UI_VECTOR.INDEX_ROW, listBox.Content.RectTransform),
                     "",
@@ -3037,7 +3859,8 @@ populateList = function(forceSearch)
                         Anchor.CenterRight
                     ),
                     entryLabel,
-                    COLOR.CREAM,
+                    currentCategory == "Bestiary" and entry.identifier == "jove" and COLOR.RED
+                        or COLOR.CREAM,
                     GUI.Style.SmallFont,
                     Alignment.CenterLeft,
                     false,
@@ -3057,6 +3880,7 @@ populateList = function(forceSearch)
             "Refine search to view " .. text(shown - limit) .. " more entries."
         )
     end
+    resetScroll(listBox)
 end
 
 selectCategory = function(name)
@@ -3083,6 +3907,7 @@ selectCategory = function(name)
     heading(detailList.Content.RectTransform, presentation.title)
     line(detailList.Content.RectTransform, presentation.description)
     line(detailList.Content.RectTransform, "\nSelect a record from the index to begin.")
+    resetScroll(detailList)
 end
 
 local function createWindow()
@@ -3452,7 +4277,13 @@ end
 
 Hook.Add("think", "JustEnoughBaro.Input", function()
     updateContextHint()
-    if PlayerInput.KeyHit(openKey) then
+    local typingInSearch = false
+    if visible and searchBox ~= nil then
+        pcall(function()
+            typingInSearch = searchBox.Selected or searchBox.IsFocused
+        end)
+    end
+    if PlayerInput.KeyHit(openKey) and not typingInSearch then
         if visible then
             toggle()
         elseif not openFocusedEntry() then
