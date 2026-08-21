@@ -3,11 +3,27 @@ set -euo pipefail
 
 mod_root="$(cd "$(dirname "$0")/.." && pwd)"
 asset_dir="$mod_root/Assets/Creatures"
-data_file="$mod_root/Lua/Client/wiki_data.lua"
+data_file="$mod_root/Data/creature_wiki.json"
 work_dir="$(mktemp -d)"
-data_temp="$work_dir/wiki_data.lua"
+data_temp="$work_dir/creature_wiki.json"
+records_temp="$work_dir/records.ndjson"
 trap 'rm -rf "$work_dir"' EXIT
 mkdir -p "$asset_dir"
+
+if [[ "${1:-}" == "--check" ]]; then
+  jq -e '
+    type == "object" and length > 0 and
+    all(to_entries[];
+      (.key | type == "string" and length > 0) and
+      (.value | type == "object") and
+      (.value.title | type == "string") and
+      (.value.description | type == "string") and
+      (.value.image | type == "string") and
+      (.value.url | type == "string" and startswith("https://barotraumagame.com/wiki/")))
+  ' "$data_file" >/dev/null
+  printf 'Validated %s creature records in %s\n' "$(jq 'length' "$data_file")" "$data_file"
+  exit 0
+fi
 
 creatures=(
   "Ancient|ancient" "Ancient Weapon Fractal Guardian|fractalguardian2"
@@ -30,7 +46,7 @@ creatures=(
   "Tiger Thresher Hatchling|tigerthresher_hatchling" "Viperling|viperling" "Watcher|watcher"
 )
 
-printf 'return {\n' > "$data_temp"
+: > "$records_temp"
 for record in "${creatures[@]}"; do
   title="${record%%|*}"
   identifier="${record#*|}"
@@ -39,8 +55,12 @@ for record in "${creatures[@]}"; do
   html="$work_dir/$identifier.html"
   if ! curl -L --fail --silent --show-error \
     "https://barotraumagame.com/baro-wiki/api.php?action=parse&page=$encoded_title&prop=text&format=json" -o "$json"; then
-    printf '    ["%s"] = {\n        title = [=[%s]=],\n        description = [=[]=],\n        image = [=[]=],\n        url = [=[https://barotraumagame.com/wiki/%s]=],\n    },\n' \
-      "$identifier" "$title" "${encoded_title//%20/_}" >> "$data_temp"
+    jq -nc \
+      --arg key "$identifier" \
+      --arg title "$title" \
+      --arg url "https://barotraumagame.com/wiki/${encoded_title//%20/_}" \
+      '{key: $key, value: {title: $title, description: "", image: "", url: $url}}' \
+      >> "$records_temp"
     continue
   fi
   jq -r '.parse.text."*" // ""' "$json" > "$html"
@@ -53,9 +73,14 @@ for record in "${creatures[@]}"; do
       image_path="Assets/Creatures/$identifier.png"
     fi
   fi
-  description="${description//]=]/] = ]}"
-  printf '    ["%s"] = {\n        title = [=[%s]=],\n        description = [=[%s]=],\n        image = [=[%s]=],\n        url = [=[https://barotraumagame.com/wiki/%s]=],\n    },\n' \
-    "$identifier" "$title" "$description" "$image_path" "${encoded_title//%20/_}" >> "$data_temp"
+  jq -nc \
+    --arg key "$identifier" \
+    --arg title "$title" \
+    --arg description "$description" \
+    --arg image "$image_path" \
+    --arg url "https://barotraumagame.com/wiki/${encoded_title//%20/_}" \
+    '{key: $key, value: {title: $title, description: $description, image: $image, url: $url}}' \
+    >> "$records_temp"
 done
-printf '}\n' >> "$data_temp"
+jq -s 'from_entries' "$records_temp" > "$data_temp"
 mv "$data_temp" "$data_file"

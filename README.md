@@ -1,54 +1,64 @@
 # Just Enough Baro (JEB)
 
-A dynamic in-game journal for Barotrauma, implemented with LuaCsForBarotrauma.
+Just Enough Baro is a client-side, in-game reference browser for Barotrauma. The current runtime is written entirely in C# and loaded by LuaCsForBarotrauma from `CSharp/Client`; no Lua file is loaded by `ModConfig.xml`.
 
 ## Features
 
-- Bestiary generated from every loaded `CharacterPrefab`, grouped into creature families with mission/special-variant names, combat tips and prefab-derived weakspots.
-- A fully unlocked bestiary generated from loaded creature content.
-- Searchable gameplay-item database generated from loaded `ItemPrefab` data, excluding decorative furniture, doors and similar construction clutter.
-- Item-category filters for weapons, ammunition, gear, ores, alien/ruin items and more.
-- Read-only profession pages with native-style, hoverable three-column talent trees.
-- Clickable crafting skill requirements that open the associated profession reference.
-- Clickable crafting perks that open and highlight the exact talent in its profession tree.
-- Affliction reference pages with effects, stat stages, treatments and item causes.
-- Fabrication recipes plus an automatically generated **Used to craft** reverse index.
-- Deconstruction outputs, conditions/chances, and an automatically generated source index.
-- Clickable ingredient, output, reverse-crafting, and deconstruction-source navigation.
-- Lazy detail pages and capped list population for large mod packs.
-- Barotrauma-native GUI styles with an in-game configurable open key.
-- Weapon damage-channel normalization, wiring-pin documentation, two-handed Bag-slot explanations and breathing-supply duration tables.
+- A unified browser for loaded items, afflictions, creatures, biomes, talents, professions, missions, submarines, structures, upgrades, item assemblies, level objects, and events, including content added by other mods.
+- Fabrication, deconstruction, obtain, and usage views with reverse recipe indexes, alternative ingredients, conditions, devices, skill requirements, and unlock information.
+- Structured right-panel metadata grouped into readable sections such as identity, economy, contained objects, equipment, weapon, medical, electrical, creature, talent, and world-generation information.
+- An affliction reference built from every loaded `AfflictionPrefab`, with strength stages, periodic effects, treatments, item causes, suitability, and contraindications when the prefab exposes them.
+- Creature previews and anatomy data derived from loaded character and ragdoll definitions, with bundled wiki media used as a vanilla fallback.
+- Connection-panel diagrams and pin tooltips backed by 101 distinct panels imported from the official Barotrauma Wiki (including secondary loader panels), with current-vanilla variant aliases and localized per-pin fallbacks for modded or undocumented components.
+- A movable and resizable three-panel interface, visual layout profiles, clickable type separators, combined search, browser-style back/forward navigation, and pinned records.
+- A HUD fabrication tracker that updates carried ingredient counts without consuming items.
+- English, Russian, and Brazilian Portuguese interface support.
 
-## Install
+The clinical simulator and raw XML viewer are intentionally not part of JEB.
 
-1. Install the current LuaCsForBarotrauma client patch.
-2. Copy this directory to `Barotrauma/LocalMods/Just Enough Baro (JEB)`.
-3. Enable **Just Enough Baro (JEB)** in Barotrauma's mod list and restart the game.
+## Requirements and installation
 
-## Testing
+JEB uses LuaCsForBarotrauma's supported in-memory C# assembly loader. C# mods are unrestricted and are disabled by LuaCs by default.
 
-- Press **J** to open the journal. It is deliberately drawn above inventories,
-  containers, stores and workbench interfaces.
-- `encyclopedia_corpse mudraptor` spawns a mudraptor at the cursor and, after a
-  short delay, runs `killmonsters` so corpse targeting can be tested.
-  This kills every currently living monster, so use it only in a disposable test round.
-4. In multiplayer, the server and clients must enable the content package. Press **J** in a round.
+1. Install the current [LuaCsForBarotrauma](https://github.com/evilfactory/LuaCsForBarotrauma) client patch.
+2. In the LuaCs settings menu, enable **CSharp**. LuaCs can also prompt for temporary permission when joining a server that requires a C# package.
+3. Copy this directory to `Barotrauma/LocalMods/Just Enough Baro (JEB)` and enable **Just Enough Baro (JEB)** in Barotrauma's mod list.
+4. Restart the client after enabling or updating the mod. The C# sources are compiled when LuaCs loads the package, so the first load can take a little longer.
+5. Press **J** in game, or change the key in Barotrauma's mod settings. Hold **Shift** while pressing the key to jump directly to the currently selected item's page.
 
-LuaCs documentation and installer: https://github.com/evilfactory/LuaCsForBarotrauma
+JEB contains no server assembly and does not alter simulation state. Each player who wants the browser must install and enable it on their own client.
 
-## Configuration
+## Configuration and user state
 
-Change the encyclopedia key in Barotrauma's mod settings. Enter an XNA key name
-such as `J`, `K`, or `F6`; invalid values fall back to `J`. The `pageSize` value
-in `config.lua` limits instantiated search rows, and refining the search reveals
-the remaining results.
+The open key is exposed through LuaCs' in-game configuration service. Favorites, history, active layout, window geometry, and tracked recipe state are stored as versioned per-user data rather than inside the mod or Workshop directory.
 
-## Code style
+The window clamps itself to the current resolution. Built-in profiles provide compact, balanced, wide, and distraction-free layouts; the custom profile preserves manual position, size, and the selected panel arrangement.
 
-Lua files use the repository's `stylua.toml` rules. Keep one operation per line,
-give domain values descriptive constant names, and place callback bodies on their
-own lines. Run `stylua config.lua Lua` before committing Lua changes.
+## Source layout
 
-## Known data limitations
+- `CSharp/Client/Core` contains shared models, localization, text helpers, and typed configuration persistence.
+- `CSharp/Client/Data` builds the loaded-prefab catalog, reverse indexes, structured metadata, creature anatomy, and offline media lookups.
+- `CSharp/Client/Features` contains independent client features such as the HUD recipe tracker.
+- `CSharp/Client/UI` contains Barotrauma-native GUI construction and the responsive browser interface.
+- `Data` and `Assets` contain curated offline reference data and fallback media. Runtime browsing still comes from loaded prefabs, so modded content does not require entries in those datasets.
+- `scripts` contains offline import and validation utilities. These scripts are development tools and never access the network during gameplay.
 
-The encyclopedia only renders fields reliably exposed by loaded prefabs. Creature XML varies substantially, so it does not fabricate armor, spawn, loot, or attack summaries where the runtime prefab does not expose a stable value. The data/index layer is structured so these panels can be added independently.
+`ModConfig.xml` declares one recursive client source assembly:
+
+```xml
+<Assembly Folder="%ModDir%/CSharp/Client" Target="Client" IsScript="true" UseInternalAccessName="true" />
+```
+
+Do not add compiled DLL assembly entries alongside the source entry: loading both would initialize two copies of JEB. A future compiled release must replace the source declaration with one platform-specific client DLL declaration per supported platform.
+
+For offline structural checks, run `python3 scripts/validate_mod.py`. The optional IDE/build project can be compiled with `dotnet build CSharp/JustEnoughBaro.Client.csproj -p:BarotraumaDir=/absolute/path/to/Barotrauma`; it is a validation project and is not loaded by the mod package.
+
+## Data and attribution
+
+Some bundled creature descriptions, images, and connection-panel documentation are derived from the official Barotrauma Wiki. Source and license details are recorded in [NOTICE](NOTICE). The game and wiki remain authoritative when cached reference material differs from the currently installed game version.
+
+## Known limitations
+
+- Prefabs vary widely between game versions and mods. JEB omits a metadata row when a stable value cannot be read instead of inventing one.
+- A generated level or arbitrary submarine is not instantiated merely to create a preview. Map, skeleton, and preview tabs render safe data already supplied by loaded prefabs or the current game state.
+- Official wiki pin documentation covers vanilla components. Modded connection panels are displayed from their loaded definitions and clearly identify pins without curated descriptions.

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModConfig>
+  <Assembly Folder="%ModDir%/CSharp/Client" Target="Client" IsScript="true" UseInternalAccessName="true" />
   <Config File="%ModDir%/Config/SettingsClient.xml" Target="Client" />
-  <Lua File="%ModDir%/Lua/Shared/util.lua" IsAutorun="true" />
-  <Lua File="%ModDir%/Lua/Client/main.lua" Target="Client" IsAutorun="true" />
 </ModConfig>

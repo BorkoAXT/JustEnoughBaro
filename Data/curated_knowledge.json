@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "professions": {
+    "captain": {
+      "responsibilities": [
+        "Pilot the submarine and keep the crew informed about contacts, hazards and route changes.",
+        "Coordinate priorities during flooding, fires, boarding actions and medical emergencies.",
+        "Manage mission decisions, docking and the crew's limited time at outposts."
+      ],
+      "tips": [
+        "Use active sonar in short, deliberate sweeps when stealth matters; continuous active sonar advertises the submarine's position.",
+        "Call out the direction and distance of threats before changing course so gunners and repair crews can prepare.",
+        "Avoid pinning the submarine against terrain. Leave room to descend or reverse if a large creature closes in.",
+        "A calm, specific order is more useful than several vague orders. State the problem, location and priority."
+      ],
+      "source": "https://barotraumagame.com/wiki/Captain"
+    },
+    "engineer": {
+      "responsibilities": [
+        "Maintain the reactor, electrical devices, junction boxes and the submarine's power distribution.",
+        "Repair electrical equipment and fabricate electrical components, tools and fuel rods.",
+        "Diagnose unstable power demand before it becomes a cascade of damaged junction boxes."
+      ],
+      "tips": [
+        "Match reactor output to load smoothly; sharp overvoltage is often more destructive than a brief shortage.",
+        "Repair high-traffic junction boxes first, then batteries, navigation systems and less critical devices.",
+        "Carry a screwdriver, spare wire and suitable protection, but keep emergency fuel rods in a known secure location.",
+        "Before rewiring, label the purpose mentally and change one connection at a time so faults remain traceable."
+      ],
+      "source": "https://barotraumagame.com/wiki/Engineer"
+    },
+    "mechanic": {
+      "responsibilities": [
+        "Repair hull breaches and maintain mechanical installations such as pumps, engines and fabricators.",
+        "Recover minerals, deconstruct salvage and fabricate mechanical equipment.",
+        "Keep ballast spaces, docking areas and external repair routes operational."
+      ],
+      "tips": [
+        "Seal the breach before repairing nearby machinery; stopping water ingress changes the entire emergency.",
+        "Start with lower hull damage because uncontrolled flooding pulls the submarine deeper and creates more pressure.",
+        "Carry a welding tool, wrench and plasma cutter, and verify their fuel or oxygen before leaving the airlock.",
+        "Do not stand directly under a breached compartment when opening its door; let pressure and water equalize safely."
+      ],
+      "source": "https://barotraumagame.com/wiki/Mechanic"
+    },
+    "securityofficer": {
+      "responsibilities": [
+        "Operate submarine weapons, repel intruders and protect crew members from internal and external threats.",
+        "Maintain ammunition supplies and fabricate weapons or ammunition when qualified.",
+        "Control dangerous equipment without obstructing routine crew work."
+      ],
+      "tips": [
+        "Identify the target before firing; ammunition, hull integrity and friendly lives are all limited resources.",
+        "Call out empty loaders early and stage replacement ammunition near the correct turret without blocking access.",
+        "When boarding, protect the medic and retreat through defensible doors instead of chasing creatures alone.",
+        "Use stun and restraint tools when lethal force would create a larger problem for the crew."
+      ],
+      "source": "https://barotraumagame.com/wiki/Security_Officer"
+    },
+    "medicaldoctor": {
+      "responsibilities": [
+        "Diagnose and treat injuries, stabilize casualties and keep medical supplies organized.",
+        "Fabricate medicine and research or refine genetic material.",
+        "Teach the crew which first-aid supplies are safe to use without medical expertise."
+      ],
+      "tips": [
+        "Treat the cause that is killing the patient first: oxygen loss, blood loss, burns and internal damage require different responses.",
+        "Check existing drug effects before administering more medicine; overdose and addiction can turn treatment into another emergency.",
+        "Keep critical drugs in labeled containers and reserve a compact field kit for rescue outside the medical room.",
+        "Stabilize several casualties before perfecting one patient's condition during a mass-casualty event."
+      ],
+      "source": "https://barotraumagame.com/wiki/Medical_Doctor"
+    },
+    "assistant": {
+      "responsibilities": [
+        "Support whichever department is overloaded and learn the submarine's layout and emergency procedures.",
+        "Move supplies, clean hazards, report damage and perform safe repairs within current skill limits.",
+        "Fill operational gaps without taking specialized equipment away from the crew member who needs it."
+      ],
+      "tips": [
+        "Ask for a concrete assignment at the start of the round and report when it is complete.",
+        "Learn the locations of diving suits, medical care, the reactor, ballast tanks and the main airlocks first.",
+        "Carry basic repair tools only when assigned; unnecessary equipment makes shortages harder to diagnose.",
+        "The role is flexible, not disposable. Staying alive and communicating clearly is valuable crew support."
+      ],
+      "source": "https://barotraumagame.com/wiki/Assistant"
+    }
+  },
+  "submarines": {
+    "azimuth": {
+      "horizontalSpeed": 25.9,
+      "descentSpeed": 17.1,
+      "weapons": [
+        "2 Coilguns"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "2 Depth Charge Tubes"
+      ],
+      "source": "https://barotraumagame.com/wiki/Azimuth"
+    },
+    "barsuk": {
+      "horizontalSpeed": 16.1,
+      "descentSpeed": 14.2,
+      "weapons": [
+        "1 Coilgun",
+        "1 Pulse Laser"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Depth Charge Tube"
+      ],
+      "source": "https://barotraumagame.com/wiki/Barsuk"
+    },
+    "berilia": {
+      "horizontalSpeed": 16.9,
+      "descentSpeed": 14.8,
+      "weapons": [
+        "2 Coilguns",
+        "1 Flak Cannon"
+      ],
+      "hardpoints": 0,
+      "largeHardpoints": 1,
+      "other": [
+        "2 Electrical Discharge Coils",
+        "1 Depth Charge Tube"
+      ],
+      "source": "https://barotraumagame.com/wiki/Berilia"
+    },
+    "camel": {
+      "horizontalSpeed": 22.3,
+      "descentSpeed": 14.1,
+      "weapons": [
+        "1 Coilgun",
+        "1 Chaingun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [],
+      "source": "https://barotraumagame.com/wiki/Camel"
+    },
+    "dugong": {
+      "horizontalSpeed": 21.6,
+      "descentSpeed": 13.6,
+      "weapons": [
+        "2 Coilguns"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil"
+      ],
+      "source": "https://barotraumagame.com/wiki/Dugong"
+    },
+    "herja": {
+      "horizontalSpeed": 22.1,
+      "descentSpeed": 15.3,
+      "weapons": [
+        "1 Coilgun",
+        "1 Chaingun",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil",
+        "1 Depth Charge Tube"
+      ],
+      "source": "https://barotraumagame.com/wiki/Herja"
+    },
+    "humpback": {
+      "horizontalSpeed": 22.6,
+      "descentSpeed": 17,
+      "weapons": [
+        "2 Coilguns",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [],
+      "source": "https://barotraumagame.com/wiki/Humpback"
+    },
+    "kastrull": {
+      "horizontalSpeed": 20.6,
+      "descentSpeed": 8.5,
+      "weapons": [
+        "2 Coilguns",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "2 Electrical Discharge Coils",
+        "1 Depth Charge Tube",
+        "Armed drone"
+      ],
+      "source": "https://barotraumagame.com/wiki/Kastrull"
+    },
+    "orca": {
+      "horizontalSpeed": 24.8,
+      "descentSpeed": 16.8,
+      "weapons": [
+        "2 Coilguns"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil",
+        "1 Depth Charge Tube"
+      ],
+      "source": "https://barotraumagame.com/wiki/Orca"
+    },
+    "orca2": {
+      "horizontalSpeed": 24.8,
+      "descentSpeed": 12.8,
+      "weapons": [
+        "1 Chaingun",
+        "1 Double Coilgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil",
+        "1 Depth Charge Tube"
+      ],
+      "source": "https://barotraumagame.com/wiki/Orca_2"
+    },
+    "r-29": {
+      "horizontalSpeed": 18.7,
+      "descentSpeed": 9.9,
+      "weapons": [
+        "1 Coilgun",
+        "1 Flak Cannon"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "2 Electrical Discharge Coils"
+      ],
+      "source": "https://barotraumagame.com/wiki/R-29"
+    },
+    "remora": {
+      "horizontalSpeed": 21.6,
+      "descentSpeed": 12.5,
+      "weapons": [
+        "1 Coilgun",
+        "1 Double Coilgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil",
+        "1 Depth Charge Tube",
+        "Armed drone"
+      ],
+      "source": "https://barotraumagame.com/wiki/Remora"
+    },
+    "typhon": {
+      "horizontalSpeed": 18.3,
+      "descentSpeed": 9.3,
+      "weapons": [
+        "1 Coilgun",
+        "1 Double Coilgun",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Depth Charge Tube"
+      ],
+      "source": "https://barotraumagame.com/wiki/Typhon"
+    },
+    "typhon2": {
+      "horizontalSpeed": 21.5,
+      "descentSpeed": 12.6,
+      "weapons": [
+        "1 Chaingun",
+        "2 Double Coilguns",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil"
+      ],
+      "source": "https://barotraumagame.com/wiki/Typhon_2"
+    },
+    "wallaby": {
+      "horizontalSpeed": 23.4,
+      "descentSpeed": 15.5,
+      "weapons": [
+        "2 Coilguns",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil"
+      ],
+      "source": "https://barotraumagame.com/wiki/Wallaby"
+    },
+    "winterhalter": {
+      "horizontalSpeed": 24.5,
+      "descentSpeed": 13.5,
+      "weapons": [
+        "1 Coilgun",
+        "1 Double Coilgun",
+        "1 Railgun"
+      ],
+      "hardpoints": 1,
+      "largeHardpoints": 0,
+      "other": [
+        "1 Electrical Discharge Coil"
+      ],
+      "source": "https://barotraumagame.com/wiki/Winterhalter"
+    }
+  }
+}

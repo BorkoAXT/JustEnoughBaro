@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <OutputType>Library</OutputType>
+    <DefineConstants>CLIENT</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="RequireBarotraumaDir" BeforeTargets="ResolveReferences"
+          Condition="'$(BarotraumaDir)' == '' or !Exists('$(BarotraumaDir)/Publicized/Barotrauma.dll')">
+    <Error Text="Pass -p:BarotraumaDir=/absolute/path/to/Barotrauma (with LuaCs publicized assemblies installed)." />
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="Client/**/*.cs" />
+    <Reference Include="Barotrauma">
+      <HintPath>$(BarotraumaDir)/Publicized/Barotrauma.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BarotraumaCore">
+      <HintPath>$(BarotraumaDir)/Publicized/BarotraumaCore.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="MonoGame.Framework">
+      <HintPath>$(BarotraumaDir)/MonoGame.Framework.Linux.NetStandard.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="XNATypes">
+      <HintPath>$(BarotraumaDir)/XNATypes.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FluentResults">
+      <HintPath>$(BarotraumaDir)/FluentResults.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OneOf">
+      <HintPath>$(BarotraumaDir)/OneOf.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

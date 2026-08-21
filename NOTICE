@@ -1,0 +1,40 @@
+Just Enough Baro (JEB) — Third-Party Notices
+================================================
+
+Official Barotrauma Wiki material
+---------------------------------
+
+Parts of the offline reference data in this repository are derived from the
+official Barotrauma Wiki, including:
+
+- creature descriptions and source links in the generated creature dataset;
+- creature images under Assets/Creatures;
+- profession guidance and vanilla submarine reference specifications in the
+  curated knowledge dataset;
+- connection-panel names and descriptions in the generated wiring dataset.
+
+Source: https://barotraumagame.com/wiki/
+Contributors: contributors to the official Barotrauma Wiki
+
+The wiki declares its text and community content under the Creative Commons
+Attribution-NonCommercial-ShareAlike 3.0 license (CC BY-NC-SA 3.0):
+
+https://creativecommons.org/licenses/by-nc-sa/3.0/
+
+The wiki's declared rights information can be queried at:
+
+https://barotraumagame.com/baro-wiki/api.php?action=query&meta=siteinfo&siprop=rightsinfo&format=json
+
+JEB reformats, normalizes, selects, and in some places paraphrases this material
+for an offline in-game reference. Wiki-derived data and adaptations are offered
+under the same CC BY-NC-SA 3.0 terms. This notice does not apply that license to
+JEB's original program code.
+
+Individual source page URLs are retained in generated records where available.
+Connection-panel records originate from item pages that use the wiki's
+"Connection panel" template and from the consolidated "Wiring Components" page.
+
+Some wiki-hosted images depict artwork from Barotrauma. Copyright and trademark
+rights in Barotrauma and its original game assets remain with their respective
+owners. This project is an unofficial community mod and is not endorsed by or
+affiliated with the Barotrauma developers or publisher.

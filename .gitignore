@@ -1,1 +1,3 @@
 Data/*.txt
+/CSharp/bin/
+/CSharp/obj/
